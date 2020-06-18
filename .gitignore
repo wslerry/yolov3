@@ -242,3 +242,6 @@ com_crashlytics_export_strings.xml
 crashlytics.properties
 crashlytics-build.properties
 fabric.properties
+
+./weights/yolov3-spp-ultralytics.pt
+./data/samples/20190531_203400.jpg
