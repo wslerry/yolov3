@@ -76,13 +76,11 @@ def detect(save_img=False):
     # Run inference
     t0 = time.time()
     img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
-    print(torch.zeros((1, 3, imgsz, imgsz), device=device))
     _ = model(img.half() if half else img.float()) if device.type != 'cpu' else None  # run once
     for path, img, im0s, vid_cap in dataset:
         img = torch.from_numpy(img).to(device)
-        print(torch.from_numpy(img).to(device))
+        print(img)
         img = img.half() if half else img.float()  # uint8 to fp16/32
-        print(img.half() if half else img.float())
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         if img.ndimension() == 3:
             img = img.unsqueeze(0)
