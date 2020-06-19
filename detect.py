@@ -123,17 +123,18 @@ def detect(save_img=False):
                 p, s, im0 = path, '', im0s
 
             save_path = str(Path(out) / Path(p).name)
+            print(save_path)
             s += '%gx%g ' % img.shape[2:]  # print string
             if det is not None and len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
-
                 # Print results
                 for c in det[:, -1].unique():
                     n = (det[:, -1] == c).sum()  # detections per class
                     s += '%g %ss, ' % (n, names[int(c)])  # add to string
 
                 # Write results
+                xy_coords = []
                 for *xyxy, conf, cls in det:
                     if save_txt:  # Write to file
                         with open(save_path + '.txt', 'a') as file:
@@ -141,7 +142,24 @@ def detect(save_img=False):
 
                     if opt.save_geom:
                         c1, c2 = (int(xyxy[0]), int(xyxy[1])), (int(xyxy[2]), int(xyxy[3]))
-                        print(c1, c2)
+                        # print(c1, c2)
+                        (left, top) = (c1[0], c1[1])
+                        (width, height) = (c2[0]-left, c2[1]-top)
+
+                        cent_x = left + (width / 2)
+                        cent_y = top + (height / 2)
+
+                        try:
+                            rad = (width / 2) + (height ** 2 / (8 * width))
+                        except ZeroDivisionError:
+                            rad = 0
+                        xs, ys = affine * ([cent_x, cent_y])
+                        # print(names[int(cls)], float(conf), xs, ys)
+
+                        xy_coords.append([names[int(cls)], float(conf), Point((xs, ys))])
+                        df = gpd.GeoDataFrame(xy_coords, columns=['labels', 'confidences', 'geometry'])
+                        df.crs = image_crs
+                        df.to_file(save_path + '.gpkg', driver='GPKG')
 
                     if save_img or view_img:  # Add bbox to image
                         label = '%s %.2f' % (names[int(cls)], conf)
