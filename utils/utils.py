@@ -817,7 +817,6 @@ def output_to_target(output, width, height):
                 cls = int(pred[5])
 
                 targets.append([i, cls, x, y, w, h, conf])
-                print(targets)
 
     return np.array(targets)
 
