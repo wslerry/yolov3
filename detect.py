@@ -1,6 +1,6 @@
 import argparse
 from sys import platform
-
+import math
 from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
@@ -20,10 +20,8 @@ def detect(save_img=False):
         image_crs = src.crs
         affine = src.transform
         src_meta = src.profile
-        array = src.read(1)
+        # array = src.read(1)
         img_size = src_meta['width']
-        print(f"array : {array.shape}")
-        print(f"image size : {img_size}")
 
     device = torch_utils.select_device(device='cpu' if ONNX_EXPORT else opt.device)
     if os.path.exists(out):
@@ -134,7 +132,8 @@ def detect(save_img=False):
                     s += '%g %ss, ' % (n, names[int(c)])  # add to string
 
                 # Write results
-                xy_coords = []
+                xy_coords = list()
+                circle_ = list()
                 for *xyxy, conf, cls in det:
                     if save_txt:  # Write to file
                         with open(save_path + '.txt', 'a') as file:
@@ -154,16 +153,32 @@ def detect(save_img=False):
                         except ZeroDivisionError:
                             rad = 0
                         xs, ys = affine * ([cent_x, cent_y])
-                        # print(names[int(cls)], float(conf), xs, ys)
-
                         xy_coords.append([names[int(cls)], float(conf), Point((xs, ys))])
-                        df = gpd.GeoDataFrame(xy_coords, columns=['labels', 'confidences', 'geometry'])
-                        df.crs = image_crs
-                        df.to_file(save_path + '.gpkg', driver='GPKG')
+
+                        theta = np.linspace(0, 2 * 3.14, 30)
+                        x_, y_ = affine * (rad * np.cos(theta) + cent_x, rad * np.sin(theta) + cent_y)
+
+                        ext = list()
+
+                        # loop over x,y, add each point to list
+                        for i_ in range(len(theta)):
+                            ext.append((x_[i_], y_[i_]))
+
+                        radius = math.sqrt((x_[0] - xs) ** 2 + (y_[0] - ys) ** 2)
+
+                        circle_.append([names[int(cls)], float(conf), round(radius, 2), Polygon(ext)])
 
                     if save_img or view_img:  # Add bbox to image
                         label = '%s %.2f' % (names[int(cls)], conf)
                         plot_one_box(xyxy, im0, label=None, color=colors[int(cls)])
+
+                df = gpd.GeoDataFrame(xy_coords, columns=['labels', 'confidences', 'geometry'])
+                df.crs = image_crs
+                df.to_file(save_path + '.gpkg', driver='GPKG')
+
+                df_circle = gpd.GeoDataFrame(circle_, columns=['labels', 'confidences', 'radius', 'geometry'])
+                df_circle.crs = image_crs
+                df_circle.to_file(save_path + '_circle.gpkg', driver='GPKG')
 
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
