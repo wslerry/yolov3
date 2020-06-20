@@ -139,11 +139,15 @@ def detect(save_img=False):
                         with open(save_path + '.txt', 'a') as file:
                             file.write(('%g ' * 6 + '\n') % (*xyxy, cls, conf))
 
+                    if save_img or view_img:  # Add bbox to image
+                        label = '%s %.2f' % (names[int(cls)], conf)
+                        plot_one_box(xyxy, im0, label=None, color=colors[int(cls)])
+
                     if opt.save_geom:
                         c1, c2 = (int(xyxy[0]), int(xyxy[1])), (int(xyxy[2]), int(xyxy[3]))
                         # print(c1, c2)
                         (left, top) = (c1[0], c1[1])
-                        (width, height) = (c2[0]-left, c2[1]-top)
+                        (width, height) = (c2[0] - left, c2[1] - top)
 
                         cent_x = left + (width / 2)
                         cent_y = top + (height / 2)
@@ -153,7 +157,7 @@ def detect(save_img=False):
                         except ZeroDivisionError:
                             rad = 0
                         xs, ys = affine * ([cent_x, cent_y])
-                        xy_coords.append([names[int(cls)], float(conf), Point((xs, ys))])
+                        xy_coords.append([names[int(cls)], float(conf), round(xs, 3), round(ys, 3), Point((xs, ys))])
 
                         theta = np.linspace(0, 2 * 3.14, 50)
                         x_, y_ = affine * (rad * np.cos(theta) + cent_x, rad * np.sin(theta) + cent_y)
@@ -168,11 +172,7 @@ def detect(save_img=False):
 
                         circle_.append([names[int(cls)], float(conf), round(radius, 2), Polygon(ext)])
 
-                    if save_img or view_img:  # Add bbox to image
-                        label = '%s %.2f' % (names[int(cls)], conf)
-                        plot_one_box(xyxy, im0, label=None, color=colors[int(cls)])
-
-                df = gpd.GeoDataFrame(xy_coords, columns=['labels', 'confidences', 'geometry'])
+                df = gpd.GeoDataFrame(xy_coords, columns=['labels', 'confidences', 'x_easting', 'y_northing', 'geometry'])
                 df.crs = image_crs
                 df.to_file(save_path + '.geojson', driver='GeoJSON')
 
