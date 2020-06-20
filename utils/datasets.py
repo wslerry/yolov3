@@ -258,27 +258,18 @@ class LoadStreams:  # multiple IP or RTSP cameras
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, path, img_size=416, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
                  cache_images=False, single_cls=False):
-        try:
-            path = str(Path(path))  # os-agnostic
-            parent = str(Path(path).parent) + os.sep
-            if os.path.isfile(path):  # file
-                with open(path, 'r') as f:
-                    f = f.read().splitlines()
-                    f = [x.replace('./', parent) if x.startswith('./') else x for x in f]  # local to global path
-            elif os.path.isdir(path):  # folder
-                f = glob.iglob(path + os.sep + '*.*')
-            else:
-                raise Exception('%s does not exist' % path)
-            self.img_files = [x.replace('/', os.sep) for x in f if os.path.splitext(x)[-1].lower() in img_formats]
-        except:
-            raise Exception('Error loading data from %s. See %s' % (path, help_url))
+        path = str(Path(path))  # os-agnostic
+        assert os.path.isfile(path), 'File not found %s. See %s' % (path, help_url)
+        with open(path, 'r') as f:
+            self.img_files = [x.replace('/', os.sep) for x in f.read().splitlines()  # os-agnostic
+                              if os.path.splitext(x)[-1].lower() in img_formats]
 
         n = len(self.img_files)
         assert n > 0, 'No images found in %s. See %s' % (path, help_url)
         bi = np.floor(np.arange(n) / batch_size).astype(np.int)  # batch index
         nb = bi[-1] + 1  # number of batches
 
-        self.n = n  # number of images
+        self.n = n
         self.batch = bi  # batch index of image
         self.img_size = img_size
         self.augment = augment
@@ -294,7 +285,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # Rectangular Training  https://github.com/ultralytics/yolov3/issues/232
         if self.rect:
             # Read image shapes (wh)
-            sp = path.replace('.txt', '') + '.shapes'  # shapefile path
+            sp = path.replace('.txt', '.shapes')  # shapefile path
             try:
                 with open(sp, 'r') as f:  # read existing shapefile
                     s = [x.split() for x in f.read().splitlines()]
@@ -306,11 +297,11 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             # Sort by aspect ratio
             s = np.array(s, dtype=np.float64)
             ar = s[:, 1] / s[:, 0]  # aspect ratio
-            irect = ar.argsort()
-            self.img_files = [self.img_files[i] for i in irect]
-            self.label_files = [self.label_files[i] for i in irect]
-            self.shapes = s[irect]  # wh
-            ar = ar[irect]
+            i = ar.argsort()
+            self.img_files = [self.img_files[i] for i in i]
+            self.label_files = [self.label_files[i] for i in i]
+            self.shapes = s[i]  # wh
+            ar = ar[i]
 
             # Set training image shapes
             shapes = [[1, 1]] * nb
@@ -327,30 +318,17 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # Cache labels
         self.imgs = [None] * n
         self.labels = [np.zeros((0, 5), dtype=np.float32)] * n
-        create_datasubset, extract_bounding_boxes, labels_loaded = False, False, False
+        extract_bounding_boxes = False
+        create_datasubset = False
+        pbar = tqdm(self.label_files, desc='Caching labels')
         nm, nf, ne, ns, nd = 0, 0, 0, 0, 0  # number missing, found, empty, datasubset, duplicate
-        np_labels_path = str(Path(self.label_files[0]).parent) + '.npy'  # saved labels in *.npy file
-        if os.path.isfile(np_labels_path):
-            s = np_labels_path  # print string
-            x = np.load(np_labels_path, allow_pickle=True)
-            if len(x) == n:
-                self.labels = x
-                labels_loaded = True
-        else:
-            s = path.replace('images', 'labels')
-
-        pbar = tqdm(self.label_files)
         for i, file in enumerate(pbar):
-            if labels_loaded:
-                l = self.labels[i]
-                # np.savetxt(file, l, '%g')  # save *.txt from *.npy file
-            else:
-                try:
-                    with open(file, 'r') as f:
-                        l = np.array([x.split() for x in f.read().splitlines()], dtype=np.float32)
-                except:
-                    nm += 1  # print('missing labels for image %s' % self.img_files[i])  # file missing
-                    continue
+            try:
+                with open(file, 'r') as f:
+                    l = np.array([x.split() for x in f.read().splitlines()], dtype=np.float32)
+            except:
+                nm += 1  # print('missing labels for image %s' % self.img_files[i])  # file missing
+                continue
 
             if l.shape[0]:
                 assert l.shape[1] == 5, '> 5 label columns: %s' % file
@@ -397,12 +375,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 ne += 1  # print('empty labels for image %s' % self.img_files[i])  # file empty
                 # os.system("rm '%s' '%s'" % (self.img_files[i], self.label_files[i]))  # remove
 
-            pbar.desc = 'Caching labels %s (%g found, %g missing, %g empty, %g duplicate, for %g images)' % (
-                s, nf, nm, ne, nd, n)
-        assert nf > 0 or n == 20288, 'No labels found in %s. See %s' % (os.path.dirname(file) + os.sep, help_url)
-        if not labels_loaded and n > 1000:
-            print('Saving labels to %s for faster future loading' % np_labels_path)
-            np.save(np_labels_path, self.labels)  # save for next time
+            pbar.desc = 'Caching labels (%g found, %g missing, %g empty, %g duplicate, for %g images)' % (
+                nf, nm, ne, nd, n)
+        assert nf > 0, 'No labels found in %s. See %s' % (os.path.dirname(file) + os.sep, help_url)
 
         # Cache images into memory for faster training (WARNING: large datasets may exceed system RAM)
         if cache_images:  # if training
@@ -651,8 +626,9 @@ def letterbox(img, new_shape=(416, 416), color=(114, 114, 114), auto=True, scale
 def random_affine(img, targets=(), degrees=10, translate=.1, scale=.1, shear=10, border=0):
     # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-10, 10))
     # https://medium.com/uruvideo/dataset-augmentation-with-random-homographies-a8f4b44830d4
-    # targets = [cls, xyxy]
 
+    if targets is None:  # targets = [cls, xyxy]
+        targets = []
     height = img.shape[0] + border * 2
     width = img.shape[1] + border * 2
 
@@ -661,7 +637,6 @@ def random_affine(img, targets=(), degrees=10, translate=.1, scale=.1, shear=10,
     a = random.uniform(-degrees, degrees)
     # a += random.choice([-180, -90, 0, 90])  # add 90deg rotations to small rotations
     s = random.uniform(1 - scale, 1 + scale)
-    # s = 2 ** random.uniform(-scale, scale)
     R[:2] = cv2.getRotationMatrix2D(angle=a, center=(img.shape[1] / 2, img.shape[0] / 2), scale=s)
 
     # Translation
