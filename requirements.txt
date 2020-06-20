@@ -1,3 +1,6 @@
+shapely
+geopandas
+rasterio
 # pip install -U -r requirements.txt
 # pycocotools requires numpy 1.17 https://github.com/cocodataset/cocoapi/issues/356
 numpy == 1.17

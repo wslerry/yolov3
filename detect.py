@@ -174,11 +174,11 @@ def detect(save_img=False):
 
                 df = gpd.GeoDataFrame(xy_coords, columns=['labels', 'confidences', 'geometry'])
                 df.crs = image_crs
-                df.to_file(save_path + '.gpkg', driver='GPKG')
+                df.to_file(save_path + '.geojson', driver='GeoJSON')
 
                 df_circle = gpd.GeoDataFrame(circle_, columns=['labels', 'confidences', 'radius', 'geometry'])
                 df_circle.crs = image_crs
-                df_circle.to_file(save_path + '_circle.gpkg', driver='GPKG')
+                df_circle.to_file(save_path + '_circle.geojson', driver='GeoJSON')
 
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
