@@ -155,7 +155,7 @@ def detect(save_img=False):
                         xs, ys = affine * ([cent_x, cent_y])
                         xy_coords.append([names[int(cls)], float(conf), Point((xs, ys))])
 
-                        theta = np.linspace(0, 2 * 3.14, 30)
+                        theta = np.linspace(0, 2 * 3.14, 50)
                         x_, y_ = affine * (rad * np.cos(theta) + cent_x, rad * np.sin(theta) + cent_y)
 
                         ext = list()
