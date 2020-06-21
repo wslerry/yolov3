@@ -7,6 +7,7 @@ from utils.utils import *
 import rasterio as rio
 import geopandas as gpd
 from shapely.geometry import Point, Polygon
+from osgeo import ogr, osr
 
 
 def detect(save_img=False):
@@ -18,6 +19,8 @@ def detect(save_img=False):
     # Get geographic data from image using rasterio
     with rio.open(source) as src:
         image_crs = src.crs
+        id_crs = str(image_crs).split(":")
+        id_crs = int(id_crs[1])
         affine = src.transform
         src_meta = src.profile
         # array = src.read(1)
@@ -113,6 +116,13 @@ def detect(save_img=False):
         if classify:
             pred = apply_classifier(pred, modelc, img, im0s)
 
+        # create the spatial reference, WGS84
+        srs = osr.SpatialReference()
+        srs.ImportFromEPSG(id_crs)
+
+        # Create the output Driver
+        outDriver = ogr.GetDriverByName('GeoJSON')
+
         # Process detections
         for i, det in enumerate(pred):  # detections per image
             if webcam:  # batch_size >= 1
@@ -121,8 +131,34 @@ def detect(save_img=False):
                 p, s, im0 = path, '', im0s
 
             save_path = str(Path(out) / Path(p).name)
+            file_path = os.path.dirname(save_path)
+            filename = os.path.basename(save_path)
+            filename = os.path.splitext(filename)[0]
+
+            # Create the output GeoJSON
+            outDataSource = outDriver.CreateDataSource(file_path + '/' + filename + '.geojson')
+            outLayer = outDataSource.CreateLayer(filename, srs, geom_type=ogr.wkbPoint)
+
+            ## create field attributes
+            class_fld = ogr.FieldDefn("class", ogr.OFTString)
+            outLayer.CreateField(class_fld)
+            conf_fld = ogr.FieldDefn("confidences", ogr.OFTReal)
+            outLayer.CreateField(conf_fld)
+            x_fd = ogr.FieldDefn("x_easting", ogr.OFTReal)
+            outLayer.CreateField(x_fd)
+            y_fd = ogr.FieldDefn("y_northing", ogr.OFTReal)
+            outLayer.CreateField(y_fd)
+
+            # Get the output Layer's Feature Definition
+            featureDefn = outLayer.GetLayerDefn()
+            # create a new feature
+            outFeature = ogr.Feature(featureDefn)
 
             s += '%gx%g ' % img.shape[2:]  # print string
+
+            xy_coords = list()
+            circle_ = list()
+
             if det is not None and len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
@@ -132,8 +168,6 @@ def detect(save_img=False):
                     s += '%g %ss, ' % (n, names[int(c)])  # add to string
 
                 # Write results
-                xy_coords = list()
-                circle_ = list()
                 for *xyxy, conf, cls in det:
                     if save_txt:  # Write to file
                         with open(save_path + '.txt', 'a') as file:
@@ -152,12 +186,31 @@ def detect(save_img=False):
                         cent_x = left + (width / 2)
                         cent_y = top + (height / 2)
 
-                        try:
-                            rad = (width / 2) + (height ** 2 / (8 * width))
-                        except ZeroDivisionError:
-                            rad = 0
+                        # try:
+                        #     rad = (width / 2) + (height ** 2 / (8 * width))
+                        # except ZeroDivisionError:
+                        #     rad = 0
+
+                        rad = (width / 2) + (height ** 2 / (8 * width))
+
                         xs, ys = affine * ([cent_x, cent_y])
-                        xy_coords.append([names[int(cls)], float(conf), round(xs, 3), round(ys, 3), Point((xs, ys))])
+                        # print(xs, ys)
+                        point1 = ogr.Geometry(ogr.wkbPoint)
+                        point1.AddPoint(xs, ys)
+                        # multipoint.AddGeometry(point1)
+
+                        outFeature.SetField("class", names[int(cls)])
+                        outFeature.SetField("confidences", float(conf))
+                        outFeature.SetField("x_easting", xs)
+                        outFeature.SetField("y_northing", ys)
+
+                        # Set new geometry
+                        outFeature.SetGeometry(point1)
+
+                        # Add new feature to output Layer
+                        outLayer.CreateFeature(outFeature)
+
+                        xy_coords.append([names[int(cls)], float(conf), xs, ys, Point((xs, ys))])
 
                         theta = np.linspace(0, 2 * 3.14, 50)
                         x_, y_ = affine * (rad * np.cos(theta) + cent_x, rad * np.sin(theta) + cent_y)
@@ -172,14 +225,6 @@ def detect(save_img=False):
 
                         circle_.append([names[int(cls)], float(conf), round(radius, 2), Polygon(ext)])
 
-                df = gpd.GeoDataFrame(xy_coords, columns=['labels', 'confidences', 'x_easting', 'y_northing', 'geometry'])
-                df.crs = image_crs
-                df.to_file(save_path + '.geojson', driver='GeoJSON')
-
-                df_circle = gpd.GeoDataFrame(circle_, columns=['labels', 'confidences', 'radius', 'geometry'])
-                df_circle.crs = image_crs
-                df_circle.to_file(save_path + '_circle.geojson', driver='GeoJSON')
-
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
 
@@ -191,19 +236,49 @@ def detect(save_img=False):
 
             # Save results (image with detections)
             if save_img:
-                if dataset.mode == 'images':
-                    cv2.imwrite(save_path, im0)
-                else:
-                    if vid_path != save_path:  # new video
-                        vid_path = save_path
-                        if isinstance(vid_writer, cv2.VideoWriter):
-                            vid_writer.release()  # release previous video writer
+                # frame2rasterio = np.transpose(im0, (2, 0, 1))
+                # print(frame2rasterio)
+                #
+                # with rio.open(file_path + '/' + filename + '.tif', 'w', **src_meta) as dst:
+                #     dst.write(frame2rasterio, [3, 2, 1])
+                if opt.save_geom:
+                    frame2rasterio = np.transpose(im0, (2, 0, 1))
 
-                        fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                        w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*opt.fourcc), fps, (w, h))
-                    vid_writer.write(im0)
+                    with rio.open(file_path + '/' + filename + '.tif', 'w', **src_meta) as dst:
+                        dst.write(frame2rasterio, [3, 2, 1])
+                else:
+                    if dataset.mode == 'images':
+                        cv2.imwrite(save_path, im0)
+                    else:
+                        if vid_path != save_path:  # new video
+                            vid_path = save_path
+                            if isinstance(vid_writer, cv2.VideoWriter):
+                                vid_writer.release()  # release previous video writer
+
+                            fps = vid_cap.get(cv2.CAP_PROP_FPS)
+                            w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                            h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                            vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*opt.fourcc), fps, (w, h))
+                        vid_writer.write(im0)
+
+            if opt.save_geom:
+                # dereference the feature
+                outFeature = None
+                # Save and close DataSources
+                outDataSource = None
+
+                srs.MorphToESRI()
+                file = open(file_path + '/' + filename + '.prj', 'w')
+                file.write(srs.ExportToWkt())
+                file.close()
+
+                # df = gpd.GeoDataFrame(xy_coords, columns=['labels', 'confidences', 'x_easting', 'y_northing', 'geometry'])
+                # df.crs = image_crs
+                # df.to_file(save_path + '.geojson', driver='GeoJSON')
+                #
+                # df_circle = gpd.GeoDataFrame(circle_, columns=['labels', 'confidences', 'radius', 'geometry'])
+                # df_circle.crs = image_crs
+                # df_circle.to_file(save_path + '_circle.geojson', driver='GeoJSON')
 
     if save_txt or save_img:
         print('Results saved to %s' % os.getcwd() + os.sep + out)
