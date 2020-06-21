@@ -1,17 +1,17 @@
 import argparse
 from sys import platform
-import math
+# import math
 from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
 import rasterio as rio
-import geopandas as gpd
+# import geopandas as gpd
 from shapely.geometry import Point, Polygon
 from osgeo import ogr, osr
 
 
 def detect(save_img=False):
-    # img_size = (416, 256) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
+    img_size = (416, 256) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
     out, source, weights, half, view_img, save_txt = opt.output, opt.source, opt.weights, opt.half, opt.view_img, opt.save_txt
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
 
@@ -24,7 +24,7 @@ def detect(save_img=False):
         affine = src.transform
         src_meta = src.profile
         # array = src.read(1)
-        img_size = src_meta['width']
+        # img_size = src_meta['width']
 
     device = torch_utils.select_device(device='cpu' if ONNX_EXPORT else opt.device)
     if os.path.exists(out):
