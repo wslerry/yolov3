@@ -246,3 +246,4 @@ fabric.properties
 ./weights/yolov3-spp-ultralytics.pt
 ./data/samples/20190531_203400.jpg
 tutorial.ipynb
+Acacia_detection.ipynb

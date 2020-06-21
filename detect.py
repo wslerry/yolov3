@@ -191,13 +191,9 @@ def detect(save_img=False):
                         except ZeroDivisionError:
                             rad = 0
 
-                        # rad = (width / 2) + (height ** 2 / (8 * width))
-
                         xs, ys = affine * ([cent_x, cent_y])
-                        # print(xs, ys)
                         point1 = ogr.Geometry(ogr.wkbPoint)
                         point1.AddPoint(xs, ys)
-                        # multipoint.AddGeometry(point1)
 
                         outFeature.SetField("class", names[int(cls)])
                         outFeature.SetField("confidences", float(conf))
