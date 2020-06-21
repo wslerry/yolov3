@@ -186,12 +186,12 @@ def detect(save_img=False):
                         cent_x = left + (width / 2)
                         cent_y = top + (height / 2)
 
-                        # try:
-                        #     rad = (width / 2) + (height ** 2 / (8 * width))
-                        # except ZeroDivisionError:
-                        #     rad = 0
+                        try:
+                            rad = (width / 2) + (height ** 2 / (8 * width))
+                        except ZeroDivisionError:
+                            rad = 0
 
-                        rad = (width / 2) + (height ** 2 / (8 * width))
+                        # rad = (width / 2) + (height ** 2 / (8 * width))
 
                         xs, ys = affine * ([cent_x, cent_y])
                         # print(xs, ys)
