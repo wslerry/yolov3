@@ -116,6 +116,7 @@ def detect(save_img=False):
         if classify:
             pred = apply_classifier(pred, modelc, img, im0s)
 
+        # multipoint = ogr.Geometry(ogr.wkbMultiPoint)
         # create the spatial reference, WGS84
         srs = osr.SpatialReference()
         srs.ImportFromEPSG(id_crs)
@@ -139,6 +140,10 @@ def detect(save_img=False):
             outDataSource = outDriver.CreateDataSource(file_path + '/' + filename + '.geojson')
             outLayer = outDataSource.CreateLayer(filename, srs, geom_type=ogr.wkbPoint)
 
+            # Create the output GeoJSON
+            outDataSource_canopy = outDriver.CreateDataSource(file_path + '/' + filename + '_canopy.geojson')
+            outLayer_canopy = outDataSource_canopy.CreateLayer(filename, srs, geom_type=ogr.wkbPoint)
+
             ## create field attributes
             class_fld = ogr.FieldDefn("class", ogr.OFTString)
             outLayer.CreateField(class_fld)
@@ -149,10 +154,20 @@ def detect(save_img=False):
             y_fd = ogr.FieldDefn("y_northing", ogr.OFTReal)
             outLayer.CreateField(y_fd)
 
+            ## create field attributes for canopy layer
+            class_canopy_fld = ogr.FieldDefn("class", ogr.OFTString)
+            outLayer_canopy.CreateField(class_canopy_fld)
+            conf_canopy_fld = ogr.FieldDefn("confidences", ogr.OFTReal)
+            outLayer_canopy.CreateField(conf_canopy_fld)
+            rad_canopy_fld = ogr.FieldDefn("radius_m", ogr.OFTReal)
+            outLayer_canopy.CreateField(rad_canopy_fld)
+
             # Get the output Layer's Feature Definition
             featureDefn = outLayer.GetLayerDefn()
+            featureDefn_canopy = outLayer_canopy.GetLayerDefn()
             # create a new feature
             outFeature = ogr.Feature(featureDefn)
+            outFeature_canopy = ogr.Feature(featureDefn_canopy)
 
             s += '%gx%g ' % img.shape[2:]  # print string
 
@@ -186,14 +201,18 @@ def detect(save_img=False):
                         cent_x = left + (width / 2)
                         cent_y = top + (height / 2)
 
-                        try:
-                            rad = (width / 2) + (height ** 2 / (8 * width))
-                        except ZeroDivisionError:
-                            rad = 0
+                        # try:
+                        #     rad = (width / 2) + (height ** 2 / (8 * width))
+                        # except ZeroDivisionError:
+                        #     rad = 0
+
+                        rad = (width / 2) + (height ** 2 / (8 * width))
 
                         xs, ys = affine * ([cent_x, cent_y])
+                        # print(xs, ys)
                         point1 = ogr.Geometry(ogr.wkbPoint)
                         point1.AddPoint(xs, ys)
+                        # multipoint.AddGeometry(point1)
 
                         outFeature.SetField("class", names[int(cls)])
                         outFeature.SetField("confidences", float(conf))
@@ -210,16 +229,31 @@ def detect(save_img=False):
 
                         theta = np.linspace(0, 2 * 3.14, 50)
                         x_, y_ = affine * (rad * np.cos(theta) + cent_x, rad * np.sin(theta) + cent_y)
-
-                        ext = list()
-
-                        # loop over x,y, add each point to list
-                        for i_ in range(len(theta)):
-                            ext.append((x_[i_], y_[i_]))
-
                         radius = math.sqrt((x_[0] - xs) ** 2 + (y_[0] - ys) ** 2)
 
-                        circle_.append([names[int(cls)], float(conf), round(radius, 2), Polygon(ext)])
+                        # ext = list()
+
+                        # Create ring
+                        ring = ogr.Geometry(ogr.wkbLinearRing)
+                        # loop over x,y, add each point to list
+                        for i_ in range(len(theta)):
+                            ring.AddPoint(x_[i_], y_[i_])
+                            # ext.append((x_[i_], y_[i_]))
+
+                        poly = ogr.Geometry(ogr.wkbPolygon)
+                        poly.AddGeometry(ring)
+
+                        outFeature_canopy.SetField("class", names[int(cls)])
+                        outFeature_canopy.SetField("confidences", float(conf))
+                        outFeature_canopy.SetField("radius_m", round(radius, 2))
+
+                        # Set new geometry
+                        outFeature_canopy.SetGeometry(poly)
+
+                        # Add new feature to output Layer
+                        outLayer_canopy.CreateFeature(outFeature_canopy)
+
+                        # circle_.append([names[int(cls)], float(conf), round(radius, 2), Polygon(ext)])
 
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
