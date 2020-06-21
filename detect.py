@@ -142,7 +142,7 @@ def detect(save_img=False):
 
             # Create the output GeoJSON
             outDataSource_canopy = outDriver.CreateDataSource(file_path + '/' + filename + '_canopy.geojson')
-            outLayer_canopy = outDataSource_canopy.CreateLayer(filename, srs, geom_type=ogr.wkbPoint)
+            outLayer_canopy = outDataSource_canopy.CreateLayer(filename + '_canopy', srs, geom_type=ogr.wkbPoint)
 
             ## create field attributes
             class_fld = ogr.FieldDefn("class", ogr.OFTString)
