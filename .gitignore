@@ -247,3 +247,7 @@ fabric.properties
 ./data/samples/20190531_203400.jpg
 tutorial.ipynb
 Acacia_detection.ipynb
+output/t1f_22.geojson
+output/t1f_22.prj
+output/t1f_22.tif.txt
+output/t1f_22_canopy.geojson
