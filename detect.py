@@ -45,11 +45,10 @@ def detect(save_img=False):
         image_crs = src.crs
         id_crs = str(image_crs).split(":")
         id_crs = int(id_crs[1])
-        # affine = src.transform
         src_meta = src.profile
         img_size = int(src_meta['width']/64) * 64
         if img_size > 1024:
-            print("Image is bigger then 2048px, image tiling will be run!")
+            print("Image is bigger then 2048px, image will be tiled!")
             # new image size setting.
             img_size = 1024
             tile_img_size = img_size
@@ -109,7 +108,6 @@ def detect(save_img=False):
         dataset = LoadStreams(source, img_size=img_size)
     else:
         save_img = True
-        # dataset = LoadImages(source, img_size=img_size)
         if img_size == 1024:
             dataset = LoadImages(temp_path, img_size=img_size)
         else:
@@ -184,14 +182,6 @@ def detect(save_img=False):
             outDataSource_canopy = outDriver.CreateDataSource(cpy_path)
             outLayer_canopy = outDataSource_canopy.CreateLayer(filename + '_canopy', srs, geom_type=ogr.wkbPolygon)
 
-            # # Create the output GeoJSON
-            # outDataSource = outDriver.CreateDataSource(file_path + '/' + filename + '.geojson')
-            # outLayer = outDataSource.CreateLayer(filename, srs, geom_type=ogr.wkbPoint)
-            #
-            # # Create the output GeoJSON
-            # outDataSource_canopy = outDriver.CreateDataSource(file_path + '/' + filename + '_canopy.geojson')
-            # outLayer_canopy = outDataSource_canopy.CreateLayer(filename + '_canopy', srs, geom_type=ogr.wkbPolygon)
-
             ## create field attributes
             class_fld = ogr.FieldDefn("class", ogr.OFTString)
             outLayer.CreateField(class_fld)
@@ -219,7 +209,7 @@ def detect(save_img=False):
 
             s += '%gx%g ' % img.shape[2:]  # print string
 
-            xy_coords = list()
+            # xy_coords = list()
             # circle_ = list()
 
             if det is not None and len(det):
@@ -276,7 +266,7 @@ def detect(save_img=False):
 
                         # xy_coords.append([names[int(cls)], float(conf), xs, ys, Point((xs, ys))])
 
-                        theta = np.linspace(0, 2 * 3.14, 50)
+                        theta = np.linspace(0, 2 * 3.14, 30)
                         x_, y_ = affine * (rad * np.cos(theta) + cent_x, rad * np.sin(theta) + cent_y)
                         radius = math.sqrt((x_[0] - xs) ** 2 + (y_[0] - ys) ** 2)
 
@@ -315,11 +305,6 @@ def detect(save_img=False):
 
             # Save results (image with detections)
             if save_img:
-                # frame2rasterio = np.transpose(im0, (2, 0, 1))
-                # print(frame2rasterio)
-                #
-                # with rio.open(file_path + '/' + filename + '.tif', 'w', **src_meta) as dst:
-                #     dst.write(frame2rasterio, [3, 2, 1])
                 if opt.save_geom:
                     frame2rasterio = np.transpose(im0, (2, 0, 1))
 
@@ -348,12 +333,6 @@ def detect(save_img=False):
                 outDataSource = None
                 outDataSource_canopy = None
 
-                # img2TFW(path, os.path.join(file_path, str(filename) + '.tif'))
-                # listOfFiles = tiles_list(file_path)
-                # vrt_output = file_path + "/" + str(filename) + ".vrt"
-                # vrt_opt = gdal.BuildVRTOptions(VRTNodata='none', srcNodata="NaN")
-                # gdal.BuildVRT(vrt_output, listOfFiles, options=vrt_opt)
-                #
                 # srs.MorphToESRI()
                 # file = open(file_path + '/' + filename + '.prj', 'w')
                 # file.write(srs.ExportToWkt())
