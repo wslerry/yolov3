@@ -3,9 +3,10 @@ import math
 import os
 import random
 import shutil
+import tempfile
 import subprocess
 from pathlib import Path
-
+from time import sleep
 import cv2
 import matplotlib
 import matplotlib.pyplot as plt
@@ -14,6 +15,7 @@ import torch
 import torch.nn as nn
 import torchvision
 from tqdm import tqdm
+from osgeo import gdal
 
 from . import torch_utils  # , google_utils
 
@@ -857,6 +859,78 @@ def output_to_target(output, width, height):
 
     return np.array(targets)
 
+# Geospatial functions
+def deleteFilesIn(dirName):
+    import shutil
+    dir_folder = dirName
+    for filename in os.listdir(dir_folder):
+        file_path = os.path.join(dir_folder, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+        except Exception as e:
+            print('Failed to delete %s. Reason: %s' % (file_path, e))
+
+
+def tiles_list(dirName):
+    # create a list of file and sub directories
+    # names in the given directory
+    listOfFile = os.listdir(dirName)
+    allFiles = list()
+    # Iterate over all the entries
+    for entry in listOfFile:
+        if entry.endswith(".tif"):
+            # Create full path
+            fullPath = os.path.join(dirName, entry)
+            # If entry is a directory then get the list of files in this directory
+            if os.path.isdir(fullPath):
+                allFiles = allFiles + tiles_list(fullPath)
+            else:
+                allFiles.append(fullPath)
+
+    return allFiles
+
+
+def to_tiles(input_img, output_dir, xsize, ysize):
+    if xsize < 1 or ysize < 1:
+        raise Exception(print("[ ERROR! ] width or height dimension should be more then 1px"))
+    else:
+        pass
+
+    tile_size_x = xsize
+    tile_size_y = ysize
+
+    out_path = output_dir
+    print(f"Tiles has been save in {out_path}")
+
+    ds = gdal.Open(input_img)
+    band = ds.GetRasterBand(1)
+    x_size = band.XSize
+    y_size = band.YSize
+
+    # get only filename without extension
+    output_filename = os.path.splitext(os.path.basename(input_img))[0]
+
+    count = 0
+    for i in range(0, x_size, tile_size_x):
+        for j in range(0, y_size, tile_size_y):
+            count += 1
+            translateoptions = gdal.TranslateOptions(bandList=[1, 2, 3],
+                                                     noData="none",
+                                                     srcWin=[i, j, tile_size_x, tile_size_y])
+            gdal.Translate("" + str(out_path) + "/" + str(output_filename) + "_" + str(count) + ".tif",
+                           ds, options=translateoptions)
+            sleep(0.01)
+    print('Total tiles : {}'.format(count))
+
+    # imgfolder2TFW(out_path)
+    # Get the list of all files in directory tree at given path
+    listOfFiles = tiles_list(out_path)
+    vrt_output = out_path + "/" + str(output_filename)+"_tiles_vrt.vrt"
+    vrt_opt = gdal.BuildVRTOptions(VRTNodata='none', srcNodata="NaN")
+    gdal.BuildVRT(vrt_output, listOfFiles, options=vrt_opt)
 
 # Plotting functions ---------------------------------------------------------------------------------------------------
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):

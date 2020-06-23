@@ -1,6 +1,5 @@
 import argparse
 from sys import platform
-# import math
 from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
@@ -8,7 +7,7 @@ import rasterio as rio
 # import geopandas as gpd
 from shapely.geometry import Point, Polygon
 from osgeo import ogr, osr
-
+import tempfile
 
 def detect(save_img=False):
     # img_size = (416, 256) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
@@ -16,24 +15,43 @@ def detect(save_img=False):
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
 
     # Initialize
+    device = torch_utils.select_device(device='cpu' if ONNX_EXPORT else opt.device)
+    # if os.path.exists(out):
+    #     shutil.rmtree(out)  # delete output folder
+    # os.makedirs(out)  # make new output folder
+
+    # lerryws version
+    if not os.path.exists(out):
+        os.mkdir(out)
+    else:
+        deleteFilesIn(out)
+
+    # create temporary folder for tiles and as a new source folder
+    os_temp_dir = tempfile.gettempdir()
+    temp_path = os.path.join(os_temp_dir, "yolov3_tiles_operation")
+    if not os.path.exists(temp_path):
+        os.mkdir(temp_path)
+    else:
+        deleteFilesIn(temp_path)
+
+    # create tiles if image dimension is more then 2048
     # Get geographic data from image using rasterio
     with rio.open(source) as src:
         image_crs = src.crs
         id_crs = str(image_crs).split(":")
         id_crs = int(id_crs[1])
-        affine = src.transform
+        # affine = src.transform
         src_meta = src.profile
         img_size = int(src_meta['width']/64) * 64
-
-    if img_size > 2048:
-        img_size = opt.img_size
-    else:
-        pass
-
-    device = torch_utils.select_device(device='cpu' if ONNX_EXPORT else opt.device)
-    if os.path.exists(out):
-        shutil.rmtree(out)  # delete output folder
-    os.makedirs(out)  # make new output folder
+        if img_size > 1024:
+            print("Image is bigger then 2048PX!!")
+            # new image size setting.
+            img_size = 1024
+            tile_img_size = img_size
+            # then create tiles images
+            to_tiles(opt.source, temp_path, tile_img_size, tile_img_size)
+        else:
+            pass
 
     # Initialize model
     model = Darknet(opt.cfg, img_size)
@@ -86,7 +104,11 @@ def detect(save_img=False):
         dataset = LoadStreams(source, img_size=img_size)
     else:
         save_img = True
-        dataset = LoadImages(source, img_size=img_size)
+        # dataset = LoadImages(source, img_size=img_size)
+        if img_size == 1024:
+            dataset = LoadImages(temp_path, img_size=img_size)
+        else:
+            dataset = LoadImages(source, img_size=img_size)
 
     # Get names and colors
     names = load_classes(opt.names)
@@ -96,12 +118,17 @@ def detect(save_img=False):
     t0 = time.time()
     img = torch.zeros((1, 3, img_size, img_size), device=device)  # init img
     _ = model(img.half() if half else img.float()) if device.type != 'cpu' else None  # run once
+    total_predicted_box = list()
     for path, img, im0s, vid_cap in dataset:
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         if img.ndimension() == 3:
             img = img.unsqueeze(0)
+
+        with rio.open(path) as src:
+            affine = src.transform
+            src_meta = src.profile
 
         # Inference
         t1 = torch_utils.time_synchronized()
@@ -176,7 +203,7 @@ def detect(save_img=False):
             s += '%gx%g ' % img.shape[2:]  # print string
 
             xy_coords = list()
-            circle_ = list()
+            # circle_ = list()
 
             if det is not None and len(det):
                 # Rescale boxes from img_size to im0 size
@@ -185,6 +212,7 @@ def detect(save_img=False):
                 for c in det[:, -1].unique():
                     n = (det[:, -1] == c).sum()  # detections per class
                     s += '%g %ss, ' % (n, names[int(c)])  # add to string
+                    total_predicted_box.append(n)
 
                 # Write results
                 for *xyxy, conf, cls in det:
@@ -229,7 +257,7 @@ def detect(save_img=False):
                         # Add new feature to output Layer
                         outLayer.CreateFeature(outFeature)
 
-                        xy_coords.append([names[int(cls)], float(conf), xs, ys, Point((xs, ys))])
+                        # xy_coords.append([names[int(cls)], float(conf), xs, ys, Point((xs, ys))])
 
                         theta = np.linspace(0, 2 * 3.14, 50)
                         x_, y_ = affine * (rad * np.cos(theta) + cent_x, rad * np.sin(theta) + cent_y)
@@ -298,13 +326,21 @@ def detect(save_img=False):
             if opt.save_geom:
                 # dereference the feature
                 outFeature = None
+                outFeature_canopy = None
                 # Save and close DataSources
                 outDataSource = None
+                outDataSource_canopy = None
 
-                srs.MorphToESRI()
-                file = open(file_path + '/' + filename + '.prj', 'w')
-                file.write(srs.ExportToWkt())
-                file.close()
+                # img2TFW(path, os.path.join(file_path, str(filename) + '.tif'))
+                # listOfFiles = tiles_list(file_path)
+                # vrt_output = file_path + "/" + str(filename) + ".vrt"
+                # vrt_opt = gdal.BuildVRTOptions(VRTNodata='none', srcNodata="NaN")
+                # gdal.BuildVRT(vrt_output, listOfFiles, options=vrt_opt)
+                #
+                # srs.MorphToESRI()
+                # file = open(file_path + '/' + filename + '.prj', 'w')
+                # file.write(srs.ExportToWkt())
+                # file.close()
 
                 # df = gpd.GeoDataFrame(xy_coords, columns=['labels', 'confidences', 'x_easting', 'y_northing', 'geometry'])
                 # df.crs = image_crs
@@ -313,12 +349,13 @@ def detect(save_img=False):
                 # df_circle = gpd.GeoDataFrame(circle_, columns=['labels', 'confidences', 'radius', 'geometry'])
                 # df_circle.crs = image_crs
                 # df_circle.to_file(save_path + '_circle.geojson', driver='GeoJSON')
-
     if save_txt or save_img:
         print('Results saved to %s' % os.getcwd() + os.sep + out)
         if platform == 'darwin':  # MacOS
             os.system('open ' + save_path)
 
+    shutil.rmtree(temp_path)
+    print(f'Total predicted {names[int(c)]} : {sum(total_predicted_box)} ')
     print('Done. (%.3fs)' % (time.time() - t0))
 
 
