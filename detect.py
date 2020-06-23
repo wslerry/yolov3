@@ -26,6 +26,11 @@ def detect(save_img=False):
     else:
         deleteFilesIn(out)
 
+    if not os.path.exists(out + "/points"):
+        os.makedirs(out + "/points", exist_ok=True)
+    if not os.path.exists(out + "/canopy"):
+        os.makedirs(out + "/canopy", exist_ok=True)
+
     # create temporary folder for tiles and as a new source folder
     os_temp_dir = tempfile.gettempdir()
     temp_path = os.path.join(os_temp_dir, "yolov3_tiles_operation")
@@ -44,7 +49,7 @@ def detect(save_img=False):
         src_meta = src.profile
         img_size = int(src_meta['width']/64) * 64
         if img_size > 1024:
-            print("Image is bigger then 2048PX!!")
+            print("Image is bigger then 2048px, image tiling will be run!")
             # new image size setting.
             img_size = 1024
             tile_img_size = img_size
@@ -168,12 +173,24 @@ def detect(save_img=False):
             filename = os.path.splitext(filename)[0]
 
             # Create the output GeoJSON
-            outDataSource = outDriver.CreateDataSource(file_path + '/' + filename + '.geojson')
+            pnt_path = os.path.join(os.path.join(file_path, "points"), filename + '.geojson')
+            print(pnt_path)
+            outDataSource = outDriver.CreateDataSource(pnt_path)
             outLayer = outDataSource.CreateLayer(filename, srs, geom_type=ogr.wkbPoint)
 
             # Create the output GeoJSON
-            outDataSource_canopy = outDriver.CreateDataSource(file_path + '/' + filename + '_canopy.geojson')
-            outLayer_canopy = outDataSource_canopy.CreateLayer(filename + '_canopy', srs, geom_type=ogr.wkbPoint)
+            cpy_path = os.path.join(os.path.join(file_path, "canopy"), filename + '_canopy.geojson')
+            print(cpy_path)
+            outDataSource_canopy = outDriver.CreateDataSource(cpy_path)
+            outLayer_canopy = outDataSource_canopy.CreateLayer(filename + '_canopy', srs, geom_type=ogr.wkbPolygon)
+
+            # # Create the output GeoJSON
+            # outDataSource = outDriver.CreateDataSource(file_path + '/' + filename + '.geojson')
+            # outLayer = outDataSource.CreateLayer(filename, srs, geom_type=ogr.wkbPoint)
+            #
+            # # Create the output GeoJSON
+            # outDataSource_canopy = outDriver.CreateDataSource(file_path + '/' + filename + '_canopy.geojson')
+            # outLayer_canopy = outDataSource_canopy.CreateLayer(filename + '_canopy', srs, geom_type=ogr.wkbPolygon)
 
             ## create field attributes
             class_fld = ogr.FieldDefn("class", ogr.OFTString)
@@ -354,6 +371,11 @@ def detect(save_img=False):
         if platform == 'darwin':  # MacOS
             os.system('open ' + save_path)
 
+    vrt_filename = os.path.splitext(os.path.basename(source))[0]
+    listOfFiles = tiles_list(out)
+    vrt_output = out + "/" + str(vrt_filename) + ".vrt"
+    vrt_opt = gdal.BuildVRTOptions(VRTNodata='none', srcNodata="NaN")
+    gdal.BuildVRT(vrt_output, listOfFiles, options=vrt_opt)
     shutil.rmtree(temp_path)
     print(f'Total predicted {names[int(c)]} : {sum(total_predicted_box)} ')
     print('Done. (%.3fs)' % (time.time() - t0))
@@ -365,7 +387,7 @@ if __name__ == '__main__':
     parser.add_argument('--names', type=str, default='data/coco.names', help='*.names path')
     parser.add_argument('--weights', type=str, default='weights/yolov3-spp-ultralytics.pt', help='weights path')
     parser.add_argument('--source', type=str, default='data/samples', help='source')  # input file/folder, 0 for webcam
-    parser.add_argument('--output', type=str, default='output', help='output folder')  # output folder
+    parser.add_argument('--output', type=str, default='./output', help='output folder')  # output folder
     parser.add_argument('--img-size', type=int, default=512, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.3, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='IOU threshold for NMS')
