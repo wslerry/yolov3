@@ -16,6 +16,7 @@ import torch.nn as nn
 import torchvision
 from tqdm import tqdm
 from osgeo import gdal
+from utils import ogr2ogr
 
 from . import torch_utils  # , google_utils
 
@@ -931,6 +932,30 @@ def to_tiles(input_img, output_dir, xsize, ysize):
     vrt_output = out_path + "/" + str(output_filename)+"_tiles_vrt.vrt"
     vrt_opt = gdal.BuildVRTOptions(VRTNodata='none', srcNodata="NaN")
     gdal.BuildVRT(vrt_output, listOfFiles, options=vrt_opt)
+
+def mergeshp(input, output):
+    ogr2ogr.main(["", "-f", "ESRI Shapefile", output, input])
+
+
+def appendshp(input, output):
+    ogr2ogr.main(["", "-f", "ESRI Shapefile", "-append", output, input])
+
+
+def mergegeojson(input, output):
+    ogr2ogr.main(["", "-f", "GeoJSON", output, input])
+
+
+def appendgeojson(input, output):
+    ogr2ogr.main(["", "-f", "GeoJSON", "-append", output, input])
+
+
+def mergegpkg(input, output):
+    ogr2ogr.main(["", "-f", "GPKG", output, input])
+
+
+def appendgpkg(input, output):
+    ogr2ogr.main(["", "-f", "GPKG", "-append", output, input])
+
 
 # Plotting functions ---------------------------------------------------------------------------------------------------
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):
