@@ -172,13 +172,11 @@ def detect(save_img=False):
 
             # Create the output GeoJSON
             pnt_path = os.path.join(os.path.join(file_path, "points"), filename + '.geojson')
-            print(pnt_path)
             outDataSource = outDriver.CreateDataSource(pnt_path)
             outLayer = outDataSource.CreateLayer(filename, srs, geom_type=ogr.wkbPoint)
 
             # Create the output GeoJSON
             cpy_path = os.path.join(os.path.join(file_path, "canopy"), filename + '_canopy.geojson')
-            print(cpy_path)
             outDataSource_canopy = outDriver.CreateDataSource(cpy_path)
             outLayer_canopy = outDataSource_canopy.CreateLayer(filename + '_canopy', srs, geom_type=ogr.wkbPolygon)
 
@@ -233,7 +231,6 @@ def detect(save_img=False):
 
                     if opt.save_geom:
                         c1, c2 = (int(xyxy[0]), int(xyxy[1])), (int(xyxy[2]), int(xyxy[3]))
-                        # print(c1, c2)
                         (left, top) = (c1[0], c1[1])
                         (width, height) = (c2[0] - left, c2[1] - top)
 
@@ -248,7 +245,6 @@ def detect(save_img=False):
                         rad = (width / 2) + (height ** 2 / (8 * width))
 
                         xs, ys = affine * ([cent_x, cent_y])
-                        # print(xs, ys)
                         point1 = ogr.Geometry(ogr.wkbPoint)
                         point1.AddPoint(xs, ys)
                         # multipoint.AddGeometry(point1)
