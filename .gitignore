@@ -248,3 +248,4 @@ fabric.properties
 tutorial.ipynb
 Acacia_detection.ipynb
 output
+*.html
