@@ -924,7 +924,7 @@ def to_tiles(input_img, output_dir, xsize, ysize):
             gdal.Translate("" + str(out_path) + "/" + str(output_filename) + "_" + str(count) + ".tif",
                            ds, options=translateoptions)
             sleep(0.01)
-    print('Total tiles : {}'.format(count))
+    print('Done! Total tiles : {}'.format(count))
 
     # imgfolder2TFW(out_path)
     # Get the list of all files in directory tree at given path
@@ -958,12 +958,23 @@ def appendgpkg(input, output):
 
 
 # Plotting functions ---------------------------------------------------------------------------------------------------
-def plot_one_box(x, img, color=None, label=None, line_thickness=None):
+def plot_one_box(x, img, color=None, label=None, line_thickness=None, rect=None):
     # Plots one bounding box on image img
     tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
     c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
-    cv2.rectangle(img, c1, c2, color, thickness=tl)
+    # cv2.rectangle(img, c1, c2, color, thickness=tl)
+
+    if rect is None:
+        (left, top) = (c1[0], c1[1])
+        (width, height) = (c2[0] - left, c2[1] - top)
+        cent_x = left + (width / 2)
+        cent_y = top + (height / 2)
+        rad = (width / 2) + (height ** 2 / (8 * width))
+        cv2.circle(img, (int(cent_x), int(cent_y)), int(rad), color, thickness=tl)
+    else:
+        cv2.rectangle(img, c1, c2, color, thickness=tl)
+
     if label:
         tf = max(tl - 1, 1)  # font thickness
         t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
@@ -1054,7 +1065,7 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
                 cls = names[cls] if names else cls
                 if gt or conf[j] > 0.3:  # 0.3 conf thresh
                     label = '%s' % cls if gt else '%s %.1f' % (cls, conf[j])
-                    plot_one_box(box, mosaic, label=label, color=color, line_thickness=tl)
+                    plot_one_box(box, mosaic, label=label, color=color, line_thickness=tl, rect=None)
 
         # Draw image filename labels
         if paths is not None:

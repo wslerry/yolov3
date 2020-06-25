@@ -4,14 +4,22 @@ from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
 import rasterio as rio
+import collections
+import pandas as pd
 # import geopandas as gpd
 from shapely.geometry import Point, Polygon
 from osgeo import ogr, osr
 import tempfile
 
 def detect(save_img=False):
-    # img_size = (416, 256) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
-    out, source, weights, half, view_img, save_txt = opt.output, opt.source, opt.weights, opt.half, opt.view_img, opt.save_txt
+    img_size = (416, 256) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
+    out, source, weights, half, view_img, save_txt, save_label = opt.output, \
+                                                                  opt.source, \
+                                                                  opt.weights, \
+                                                                  opt.half, \
+                                                                  opt.view_img, \
+                                                                  opt.save_txt, \
+                                                                  opt.save_label
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
 
     # Initialize
@@ -26,37 +34,37 @@ def detect(save_img=False):
     else:
         deleteFilesIn(out)
 
-    if not os.path.exists(out + "/points"):
-        os.makedirs(out + "/points", exist_ok=True)
-    if not os.path.exists(out + "/canopy"):
-        os.makedirs(out + "/canopy", exist_ok=True)
+    if opt.geo:
+        if not os.path.exists(out + "/points"):
+            os.makedirs(out + "/points", exist_ok=True)
+        if not os.path.exists(out + "/canopy"):
+            os.makedirs(out + "/canopy", exist_ok=True)
 
-    # create temporary folder for tiles and as a new source folder
-    os_temp_dir = tempfile.gettempdir()
-    temp_path = os.path.join(os_temp_dir, "yolov3_tiles_operation")
-    if not os.path.exists(temp_path):
-        os.mkdir(temp_path)
-    else:
-        deleteFilesIn(temp_path)
-
-    # create tiles if image dimension is more then 2048
-    # Get geographic data from image using rasterio
-    with rio.open(source) as src:
-        image_crs = src.crs
-        id_crs = str(image_crs).split(":")
-        id_crs = int(id_crs[1])
-        src_meta = src.profile
-        img_size = int(src_meta['width']/64) * 64
-        if img_size > 1024:
-            print("Image is bigger then 2048px, image will be tiled!")
-            # new image size setting.
-            img_size = 1024
-            tile_img_size = img_size
-            # then create tiles images
-            to_tiles(opt.source, temp_path, tile_img_size, tile_img_size)
+        # create temporary folder for tiles and as a new source folder
+        os_temp_dir = tempfile.gettempdir()
+        temp_path = os.path.join(os_temp_dir, "yolov3_tiles_operation")
+        if not os.path.exists(temp_path):
+            os.mkdir(temp_path)
         else:
-            pass
+            deleteFilesIn(temp_path)
 
+        if os.path.isfile(source):  # if file
+            # create tiles if image dimension is more then 2048
+            # Get geographic data from image using rasterio
+            with rio.open(source) as src:
+                image_crs = src.crs
+                id_crs = str(image_crs).split(":")
+                id_crs = int(id_crs[1])
+                src_meta = src.profile
+                img_size = int(src_meta['width']/64) * 64
+                if img_size > 1024:
+                    print("Image is bigger then 2048px, image will be tiled!")
+                    # new image size setting.
+                    img_size = 1024
+                    # then create tiles images
+                    to_tiles(opt.source, temp_path, img_size, img_size)
+
+    print(img_size)
     # Initialize model
     model = Darknet(opt.cfg, img_size)
 
@@ -108,8 +116,11 @@ def detect(save_img=False):
         dataset = LoadStreams(source, img_size=img_size)
     else:
         save_img = True
-        if img_size == 1024:
-            dataset = LoadImages(temp_path, img_size=img_size)
+        if opt.geo:
+            if img_size == 1024:
+                dataset = LoadImages(temp_path, img_size=img_size)
+            else:
+                dataset = LoadImages(source, img_size=img_size)
         else:
             dataset = LoadImages(source, img_size=img_size)
 
@@ -122,6 +133,7 @@ def detect(save_img=False):
     img = torch.zeros((1, 3, img_size, img_size), device=device)  # init img
     _ = model(img.half() if half else img.float()) if device.type != 'cpu' else None  # run once
     total_predicted_box = list()
+    class_list = list()  # will be save into classes.txt
     for path, img, im0s, vid_cap in dataset:
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
@@ -129,9 +141,19 @@ def detect(save_img=False):
         if img.ndimension() == 3:
             img = img.unsqueeze(0)
 
-        with rio.open(path) as src:
-            affine = src.transform
-            src_meta = src.profile
+        if opt.geo:
+            with rio.open(path) as src:
+                image_crs = src.crs
+                id_crs = str(image_crs).split(":")
+                id_crs = int(id_crs[1])
+                affine = src.transform
+                src_meta = src.profile
+                src_imgwidth = src.profile['width']
+                src_imgheight = src.profile['height']
+        else:
+            input_img = cv2.imread(path)
+            src_imgwidth, src_imgheight = input_img.shape[0], input_img.shape[1]
+            pass
 
         # Inference
         t1 = torch_utils.time_synchronized()
@@ -152,8 +174,11 @@ def detect(save_img=False):
 
         # multipoint = ogr.Geometry(ogr.wkbMultiPoint)
         # create the spatial reference, WGS84
-        srs = osr.SpatialReference()
-        srs.ImportFromEPSG(id_crs)
+        if opt.geo:
+            srs = osr.SpatialReference()
+            srs.ImportFromEPSG(id_crs)
+        else:
+            pass
 
         # Create the output Driver
         outDriver = ogr.GetDriverByName('GeoJSON')
@@ -165,51 +190,54 @@ def detect(save_img=False):
             else:
                 p, s, im0 = path, '', im0s
 
+
             save_path = str(Path(out) / Path(p).name)
             file_path = os.path.dirname(save_path)
             filename = os.path.basename(save_path)
             filename = os.path.splitext(filename)[0]
 
-            # Create the output GeoJSON
-            pnt_path = os.path.join(os.path.join(file_path, "points"), filename + '.geojson')
-            outDataSource = outDriver.CreateDataSource(pnt_path)
-            outLayer = outDataSource.CreateLayer(filename, srs, geom_type=ogr.wkbPoint)
+            if opt.geo:
+                # Create the output GeoJSON
+                pnt_path = os.path.join(os.path.join(file_path, "points"), filename + '.geojson')
+                outDataSource = outDriver.CreateDataSource(pnt_path)
+                outLayer = outDataSource.CreateLayer(filename, srs, geom_type=ogr.wkbPoint)
 
-            # Create the output GeoJSON
-            cpy_path = os.path.join(os.path.join(file_path, "canopy"), filename + '_canopy.geojson')
-            outDataSource_canopy = outDriver.CreateDataSource(cpy_path)
-            outLayer_canopy = outDataSource_canopy.CreateLayer(filename + '_canopy', srs, geom_type=ogr.wkbPolygon)
+                # Create the output GeoJSON
+                cpy_path = os.path.join(os.path.join(file_path, "canopy"), filename + '_canopy.geojson')
+                outDataSource_canopy = outDriver.CreateDataSource(cpy_path)
+                outLayer_canopy = outDataSource_canopy.CreateLayer(filename + '_canopy', srs, geom_type=ogr.wkbPolygon)
 
-            ## create field attributes
-            class_fld = ogr.FieldDefn("class", ogr.OFTString)
-            outLayer.CreateField(class_fld)
-            conf_fld = ogr.FieldDefn("confidences", ogr.OFTReal)
-            outLayer.CreateField(conf_fld)
-            x_fd = ogr.FieldDefn("x_easting", ogr.OFTReal)
-            outLayer.CreateField(x_fd)
-            y_fd = ogr.FieldDefn("y_northing", ogr.OFTReal)
-            outLayer.CreateField(y_fd)
+                ## create field attributes
+                class_fld = ogr.FieldDefn("class", ogr.OFTString)
+                outLayer.CreateField(class_fld)
+                conf_fld = ogr.FieldDefn("confidences", ogr.OFTReal)
+                outLayer.CreateField(conf_fld)
+                x_fd = ogr.FieldDefn("x_easting", ogr.OFTReal)
+                outLayer.CreateField(x_fd)
+                y_fd = ogr.FieldDefn("y_northing", ogr.OFTReal)
+                outLayer.CreateField(y_fd)
 
-            ## create field attributes for canopy layer
-            class_canopy_fld = ogr.FieldDefn("class", ogr.OFTString)
-            outLayer_canopy.CreateField(class_canopy_fld)
-            conf_canopy_fld = ogr.FieldDefn("confidences", ogr.OFTReal)
-            outLayer_canopy.CreateField(conf_canopy_fld)
-            rad_canopy_fld = ogr.FieldDefn("radius_m", ogr.OFTReal)
-            outLayer_canopy.CreateField(rad_canopy_fld)
+                ## create field attributes for canopy layer
+                class_canopy_fld = ogr.FieldDefn("class", ogr.OFTString)
+                outLayer_canopy.CreateField(class_canopy_fld)
+                conf_canopy_fld = ogr.FieldDefn("confidences", ogr.OFTReal)
+                outLayer_canopy.CreateField(conf_canopy_fld)
+                rad_canopy_fld = ogr.FieldDefn("radius_m", ogr.OFTReal)
+                outLayer_canopy.CreateField(rad_canopy_fld)
 
-            # Get the output Layer's Feature Definition
-            featureDefn = outLayer.GetLayerDefn()
-            featureDefn_canopy = outLayer_canopy.GetLayerDefn()
-            # create a new feature
-            outFeature = ogr.Feature(featureDefn)
-            outFeature_canopy = ogr.Feature(featureDefn_canopy)
+                # Get the output Layer's Feature Definition
+                featureDefn = outLayer.GetLayerDefn()
+                featureDefn_canopy = outLayer_canopy.GetLayerDefn()
+                # create a new feature
+                outFeature = ogr.Feature(featureDefn)
+                outFeature_canopy = ogr.Feature(featureDefn_canopy)
+            else:
+                pass
 
             s += '%gx%g ' % img.shape[2:]  # print string
 
             # xy_coords = list()
             # circle_ = list()
-
             if det is not None and len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
@@ -225,9 +253,30 @@ def detect(save_img=False):
                         with open(save_path + '.txt', 'a') as file:
                             file.write(('%g ' * 6 + '\n') % (*xyxy, cls, conf))
 
+                    # trying to reverse detection box to yolo label box format
+                    if save_label:
+                        labeldir = os.path.join(os.path.join(file_path), filename + '.txt')
+                        with open(labeldir, 'a') as labelbox:
+                            c1, c2 = (int(xyxy[0]), int(xyxy[1])), (int(xyxy[2]), int(xyxy[3]))
+                            (left, top) = (c1[0], c1[1])
+                            (width, height) = (c2[0] - left, c2[1] - top)
+
+                            center_x = float(left + (width / 2)) / src_imgwidth
+                            center_y = float(top + (height / 2)) / src_imgheight
+                            width = float(width / src_imgwidth)
+                            height = float(height / src_imgheight)
+                            # print(f"{round(int(cls),0)} {center_x:.6f} {center_y:.6f} {new_width:.6f} {new_height:.6f}\n")
+
+                            labelbox.write(f'{round(int(cls),0)} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}\n')
+
+                        class_list.append([names[int(cls)]])
+
                     if save_img or view_img:  # Add bbox to image
-                        label = '%s %.2f' % (names[int(cls)], conf)
-                        plot_one_box(xyxy, im0, label=None, color=colors[int(cls)])
+                        if opt.geo:
+                            plot_one_box(xyxy, im0, label=None, color=colors[int(cls)], rect=None)
+                        else:
+                            label = '%s %.2f' % (names[int(cls)], conf)
+                            plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], rect=True)
 
                     if opt.save_geom:
                         c1, c2 = (int(xyxy[0]), int(xyxy[1])), (int(xyxy[2]), int(xyxy[3]))
@@ -341,17 +390,25 @@ def detect(save_img=False):
                 # df_circle = gpd.GeoDataFrame(circle_, columns=['labels', 'confidences', 'radius', 'geometry'])
                 # df_circle.crs = image_crs
                 # df_circle.to_file(save_path + '_circle.geojson', driver='GeoJSON')
+    if save_label:
+        df = pd.DataFrame(class_list, columns=['classes'])
+        group_data = df.groupby(df['classes'], sort=False)
+        df = pd.DataFrame(group_data.count().reset_index())
+
+        df.to_csv(out + "/classes.txt", header=False, index=False, sep='\t', mode='a')
+
     if save_txt or save_img:
         print('Results saved to %s' % os.getcwd() + os.sep + out)
         if platform == 'darwin':  # MacOS
             os.system('open ' + save_path)
+        out_filename = os.path.splitext(os.path.basename(source))[0]
+        listOfFiles = tiles_list(out)
+        vrt_output = out + "/" + str(out_filename) + ".vrt"
+        vrt_opt = gdal.BuildVRTOptions(VRTNodata='none', srcNodata="NaN")
+        gdal.BuildVRT(vrt_output, listOfFiles, options=vrt_opt)
 
-    vrt_filename = os.path.splitext(os.path.basename(source))[0]
-    listOfFiles = tiles_list(out)
-    vrt_output = out + "/" + str(vrt_filename) + ".vrt"
-    vrt_opt = gdal.BuildVRTOptions(VRTNodata='none', srcNodata="NaN")
-    gdal.BuildVRT(vrt_output, listOfFiles, options=vrt_opt)
-    shutil.rmtree(temp_path)
+    if opt.geo:
+        shutil.rmtree(temp_path)
     print(f'Total predicted {names[int(c)]} : {sum(total_predicted_box)} ')
     print('Done. (%.3fs)' % (time.time() - t0))
 
@@ -370,8 +427,10 @@ if __name__ == '__main__':
     parser.add_argument('--half', action='store_true', help='half precision FP16 inference')
     parser.add_argument('--device', default='', help='device id (i.e. 0 or 0,1) or cpu')
     parser.add_argument('--view-img', action='store_true', help='display results')
+    parser.add_argument('--geo', action='store_true', help='display results')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--save-geom', action='store_true', help='save results to *.shp')
+    parser.add_argument('--save-label', action='store_true', help='save results to *.txt')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
