@@ -4,12 +4,13 @@ from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
 import rasterio as rio
-import collections
 import pandas as pd
 # import geopandas as gpd
-from shapely.geometry import Point, Polygon
-from osgeo import ogr, osr
+#from shapely.geometry import Point, Polygon
+from osgeo import gdal, ogr, osr
 import tempfile
+
+gdal.UseExceptions()
 
 def detect(save_img=False):
     img_size = (416, 256) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
@@ -35,10 +36,11 @@ def detect(save_img=False):
         deleteFilesIn(out)
 
     if opt.geo:
-        if not os.path.exists(out + "/points"):
-            os.makedirs(out + "/points", exist_ok=True)
-        if not os.path.exists(out + "/canopy"):
-            os.makedirs(out + "/canopy", exist_ok=True)
+        if opt.save_geom:
+            if not os.path.exists(out + "/points"):
+                os.makedirs(out + "/points", exist_ok=True)
+            if not os.path.exists(out + "/canopy"):
+                os.makedirs(out + "/canopy", exist_ok=True)
 
         # create temporary folder for tiles and as a new source folder
         os_temp_dir = tempfile.gettempdir()
@@ -49,22 +51,22 @@ def detect(save_img=False):
             deleteFilesIn(temp_path)
 
         if os.path.isfile(source):  # if file
-            # create tiles if image dimension is more then 2048
+            # create tiles if image dimension is more then 1024
             # Get geographic data from image using rasterio
             with rio.open(source) as src:
-                image_crs = src.crs
-                id_crs = str(image_crs).split(":")
-                id_crs = int(id_crs[1])
                 src_meta = src.profile
                 img_size = int(src_meta['width']/64) * 64
                 if img_size > 1024:
-                    print("Image is bigger then 2048px, image will be tiled!")
+                    print("Image is bigger then 1024px, image will be tiled!")
                     # new image size setting.
                     img_size = 1024
                     # then create tiles images
                     to_tiles(opt.source, temp_path, img_size, img_size)
+                else:
+                    img_size = img_size
+        else:
+            pass
 
-    print(img_size)
     # Initialize model
     model = Darknet(opt.cfg, img_size)
 
@@ -143,6 +145,11 @@ def detect(save_img=False):
 
         if opt.geo:
             with rio.open(path) as src:
+                try:
+                    if src.crs != None:
+                        pass
+                except:
+                    raise ValueError("Image not a geospatial data!")
                 image_crs = src.crs
                 id_crs = str(image_crs).split(":")
                 id_crs = int(id_crs[1])
@@ -197,40 +204,41 @@ def detect(save_img=False):
             filename = os.path.splitext(filename)[0]
 
             if opt.geo:
-                # Create the output GeoJSON
-                pnt_path = os.path.join(os.path.join(file_path, "points"), filename + '.geojson')
-                outDataSource = outDriver.CreateDataSource(pnt_path)
-                outLayer = outDataSource.CreateLayer(filename, srs, geom_type=ogr.wkbPoint)
+                if opt.save_geom:
+                    # Create the output GeoJSON
+                    pnt_path = os.path.join(os.path.join(file_path, "points"), filename + '.geojson')
+                    outDataSource = outDriver.CreateDataSource(pnt_path)
+                    outLayer = outDataSource.CreateLayer(filename, srs, geom_type=ogr.wkbPoint)
 
-                # Create the output GeoJSON
-                cpy_path = os.path.join(os.path.join(file_path, "canopy"), filename + '_canopy.geojson')
-                outDataSource_canopy = outDriver.CreateDataSource(cpy_path)
-                outLayer_canopy = outDataSource_canopy.CreateLayer(filename + '_canopy', srs, geom_type=ogr.wkbPolygon)
+                    # Create the output GeoJSON
+                    cpy_path = os.path.join(os.path.join(file_path, "canopy"), filename + '_canopy.geojson')
+                    outDataSource_canopy = outDriver.CreateDataSource(cpy_path)
+                    outLayer_canopy = outDataSource_canopy.CreateLayer(filename + '_canopy', srs, geom_type=ogr.wkbPolygon)
 
-                ## create field attributes
-                class_fld = ogr.FieldDefn("class", ogr.OFTString)
-                outLayer.CreateField(class_fld)
-                conf_fld = ogr.FieldDefn("confidences", ogr.OFTReal)
-                outLayer.CreateField(conf_fld)
-                x_fd = ogr.FieldDefn("x_easting", ogr.OFTReal)
-                outLayer.CreateField(x_fd)
-                y_fd = ogr.FieldDefn("y_northing", ogr.OFTReal)
-                outLayer.CreateField(y_fd)
+                    ## create field attributes
+                    class_fld = ogr.FieldDefn("class", ogr.OFTString)
+                    outLayer.CreateField(class_fld)
+                    conf_fld = ogr.FieldDefn("confidences", ogr.OFTReal)
+                    outLayer.CreateField(conf_fld)
+                    x_fd = ogr.FieldDefn("x_easting", ogr.OFTReal)
+                    outLayer.CreateField(x_fd)
+                    y_fd = ogr.FieldDefn("y_northing", ogr.OFTReal)
+                    outLayer.CreateField(y_fd)
 
-                ## create field attributes for canopy layer
-                class_canopy_fld = ogr.FieldDefn("class", ogr.OFTString)
-                outLayer_canopy.CreateField(class_canopy_fld)
-                conf_canopy_fld = ogr.FieldDefn("confidences", ogr.OFTReal)
-                outLayer_canopy.CreateField(conf_canopy_fld)
-                rad_canopy_fld = ogr.FieldDefn("radius_m", ogr.OFTReal)
-                outLayer_canopy.CreateField(rad_canopy_fld)
+                    ## create field attributes for canopy layer
+                    class_canopy_fld = ogr.FieldDefn("class", ogr.OFTString)
+                    outLayer_canopy.CreateField(class_canopy_fld)
+                    conf_canopy_fld = ogr.FieldDefn("confidences", ogr.OFTReal)
+                    outLayer_canopy.CreateField(conf_canopy_fld)
+                    rad_canopy_fld = ogr.FieldDefn("radius_m", ogr.OFTReal)
+                    outLayer_canopy.CreateField(rad_canopy_fld)
 
-                # Get the output Layer's Feature Definition
-                featureDefn = outLayer.GetLayerDefn()
-                featureDefn_canopy = outLayer_canopy.GetLayerDefn()
-                # create a new feature
-                outFeature = ogr.Feature(featureDefn)
-                outFeature_canopy = ogr.Feature(featureDefn_canopy)
+                    # Get the output Layer's Feature Definition
+                    featureDefn = outLayer.GetLayerDefn()
+                    featureDefn_canopy = outLayer_canopy.GetLayerDefn()
+                    # create a new feature
+                    outFeature = ogr.Feature(featureDefn)
+                    outFeature_canopy = ogr.Feature(featureDefn_canopy)
             else:
                 pass
 
@@ -350,7 +358,7 @@ def detect(save_img=False):
 
             # Save results (image with detections)
             if save_img:
-                if opt.save_geom:
+                if opt.geo or opt.save_geom:
                     frame2rasterio = np.transpose(im0, (2, 0, 1))
 
                     with rio.open(file_path + '/' + filename + '.tif', 'w', **src_meta) as dst:
