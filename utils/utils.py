@@ -910,6 +910,12 @@ def to_tiles(input_img, output_dir, xsize, ysize):
     band = ds.GetRasterBand(1)
     x_size = band.XSize
     y_size = band.YSize
+    band_list = ds.RasterCount
+    bnds = list()
+    idx = 1
+    for i in range(band_list):
+        idx += 1
+        bnds.append(idx - 1)
 
     # get only filename without extension
     output_filename = os.path.splitext(os.path.basename(input_img))[0]
@@ -918,9 +924,11 @@ def to_tiles(input_img, output_dir, xsize, ysize):
     for i in range(0, x_size, tile_size_x):
         for j in range(0, y_size, tile_size_y):
             count += 1
-            translateoptions = gdal.TranslateOptions(bandList=[1, 2, 3],
-                                                     noData="none",
+            translateoptions = gdal.TranslateOptions(bandList=bnds,
                                                      srcWin=[i, j, tile_size_x, tile_size_y])
+            # translateoptions = gdal.TranslateOptions(bandList=bnds,
+            #                                          noData="none",
+            #                                          srcWin=[i, j, tile_size_x, tile_size_y])
             gdal.Translate("" + str(out_path) + "/" + str(output_filename) + "_" + str(count) + ".tif",
                            ds, options=translateoptions)
             sleep(0.01)
