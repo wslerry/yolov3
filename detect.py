@@ -418,7 +418,7 @@ def detect(save_img=False):
 
     if opt.geo:
         shutil.rmtree(temp_path)
-    print(f'Total predicted {names[int(c)]} : {sum(total_predicted_box)} ')
+    # print(f'Total predicted {names[int(c)]} : {sum(total_predicted_box)} ')
     print('Done. (%.3fs)' % (time.time() - t0))
 
 
