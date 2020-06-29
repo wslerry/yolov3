@@ -970,7 +970,10 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None, rect=None)
         (width, height) = (c2[0] - left, c2[1] - top)
         cent_x = left + (width / 2)
         cent_y = top + (height / 2)
-        rad = (width / 2) + (height ** 2 / (8 * width))
+        try:
+            rad = (width / 2) + (height ** 2 / (8 * width))
+        except ZeroDivisionError:
+            rad = 0
         cv2.circle(img, (int(cent_x), int(cent_y)), int(rad), color, thickness=tl)
     else:
         cv2.rectangle(img, c1, c2, color, thickness=tl)

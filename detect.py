@@ -294,12 +294,12 @@ def detect(save_img=False):
                         cent_x = left + (width / 2)
                         cent_y = top + (height / 2)
 
-                        # try:
-                        #     rad = (width / 2) + (height ** 2 / (8 * width))
-                        # except ZeroDivisionError:
-                        #     rad = 0
+                        try:
+                            rad = (width / 2) + (height ** 2 / (8 * width))
+                        except ZeroDivisionError:
+                            rad = 0
 
-                        rad = (width / 2) + (height ** 2 / (8 * width))
+                        # rad = (width / 2) + (height ** 2 / (8 * width))
 
                         xs, ys = affine * ([cent_x, cent_y])
                         point1 = ogr.Geometry(ogr.wkbPoint)
@@ -386,6 +386,12 @@ def detect(save_img=False):
                 outDataSource = None
                 outDataSource_canopy = None
 
+                out_filename = os.path.splitext(os.path.basename(source))[0]
+                listOfFiles = tiles_list(out)
+                vrt_output = out + "/" + str(out_filename) + ".vrt"
+                vrt_opt = gdal.BuildVRTOptions(VRTNodata='none', srcNodata="NaN")
+                gdal.BuildVRT(vrt_output, listOfFiles, options=vrt_opt)
+
                 # srs.MorphToESRI()
                 # file = open(file_path + '/' + filename + '.prj', 'w')
                 # file.write(srs.ExportToWkt())
@@ -409,11 +415,6 @@ def detect(save_img=False):
         print('Results saved to %s' % os.getcwd() + os.sep + out)
         if platform == 'darwin':  # MacOS
             os.system('open ' + save_path)
-        out_filename = os.path.splitext(os.path.basename(source))[0]
-        listOfFiles = tiles_list(out)
-        vrt_output = out + "/" + str(out_filename) + ".vrt"
-        vrt_opt = gdal.BuildVRTOptions(VRTNodata='none', srcNodata="NaN")
-        gdal.BuildVRT(vrt_output, listOfFiles, options=vrt_opt)
 
     if opt.geo:
         shutil.rmtree(temp_path)
@@ -435,7 +436,7 @@ if __name__ == '__main__':
     parser.add_argument('--half', action='store_true', help='half precision FP16 inference')
     parser.add_argument('--device', default='', help='device id (i.e. 0 or 0,1) or cpu')
     parser.add_argument('--view-img', action='store_true', help='display results')
-    parser.add_argument('--geo', action='store_true', help='display results')
+    parser.add_argument('--geo', action='store_true', help='operation for geospatial dataset')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--save-geom', action='store_true', help='save results to *.shp')
     parser.add_argument('--save-label', action='store_true', help='save results to *.txt')
