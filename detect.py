@@ -439,7 +439,7 @@ if __name__ == '__main__':
     parser.add_argument('--geo', action='store_true', help='operation for geospatial dataset')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--save-geom', action='store_true', help='save results to *.shp')
-    parser.add_argument('--save-label', action='store_true', help='save results to *.txt')
+    parser.add_argument('--save-label', action='store_true', help='save labels to *.txt')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
