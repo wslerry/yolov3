@@ -284,7 +284,7 @@ def detect(save_img=False):
                             plot_one_box(xyxy, im0, label=None, color=colors[int(cls)], rect=None)
                         else:
                             label = '%s %.2f' % (names[int(cls)], conf)
-                            plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], rect=True)
+                            plot_one_box(xyxy, im0, label=None, color=colors[int(cls)], rect=True)
 
                     if opt.save_geom:
                         c1, c2 = (int(xyxy[0]), int(xyxy[1])), (int(xyxy[2]), int(xyxy[3]))
