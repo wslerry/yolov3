@@ -188,7 +188,7 @@ def detect(save_img=False):
             pass
 
         # Create the output Driver
-        outDriver = ogr.GetDriverByName('GeoJSON')
+        outDriver = ogr.GetDriverByName('ESRI Shapefile')
 
         # Process detections
         for i, det in enumerate(pred):  # detections per image
@@ -206,19 +206,19 @@ def detect(save_img=False):
             if opt.geo:
                 if opt.save_geom:
                     # Create the output GeoJSON
-                    pnt_path = os.path.join(os.path.join(file_path, "points"), filename + '.geojson')
+                    pnt_path = os.path.join(os.path.join(file_path, "points"), filename + '.shp')
                     outDataSource = outDriver.CreateDataSource(pnt_path)
                     outLayer = outDataSource.CreateLayer(filename, srs, geom_type=ogr.wkbPoint)
 
                     # Create the output GeoJSON
-                    cpy_path = os.path.join(os.path.join(file_path, "canopy"), filename + '_canopy.geojson')
+                    cpy_path = os.path.join(os.path.join(file_path, "canopy"), filename + '_canopy.shp')
                     outDataSource_canopy = outDriver.CreateDataSource(cpy_path)
                     outLayer_canopy = outDataSource_canopy.CreateLayer(filename + '_canopy', srs, geom_type=ogr.wkbPolygon)
 
                     ## create field attributes
                     class_fld = ogr.FieldDefn("class", ogr.OFTString)
                     outLayer.CreateField(class_fld)
-                    conf_fld = ogr.FieldDefn("confidences", ogr.OFTReal)
+                    conf_fld = ogr.FieldDefn("confidence", ogr.OFTReal)
                     outLayer.CreateField(conf_fld)
                     x_fd = ogr.FieldDefn("x_easting", ogr.OFTReal)
                     outLayer.CreateField(x_fd)
@@ -228,7 +228,7 @@ def detect(save_img=False):
                     ## create field attributes for canopy layer
                     class_canopy_fld = ogr.FieldDefn("class", ogr.OFTString)
                     outLayer_canopy.CreateField(class_canopy_fld)
-                    conf_canopy_fld = ogr.FieldDefn("confidences", ogr.OFTReal)
+                    conf_canopy_fld = ogr.FieldDefn("confidence", ogr.OFTReal)
                     outLayer_canopy.CreateField(conf_canopy_fld)
                     rad_canopy_fld = ogr.FieldDefn("radius_m", ogr.OFTReal)
                     outLayer_canopy.CreateField(rad_canopy_fld)
@@ -307,7 +307,7 @@ def detect(save_img=False):
                         # multipoint.AddGeometry(point1)
 
                         outFeature.SetField("class", names[int(cls)])
-                        outFeature.SetField("confidences", float(conf))
+                        outFeature.SetField("confidence", float(conf))
                         outFeature.SetField("x_easting", xs)
                         outFeature.SetField("y_northing", ys)
 
@@ -336,7 +336,7 @@ def detect(save_img=False):
                         poly.AddGeometry(ring)
 
                         outFeature_canopy.SetField("class", names[int(cls)])
-                        outFeature_canopy.SetField("confidences", float(conf))
+                        outFeature_canopy.SetField("confidence", float(conf))
                         outFeature_canopy.SetField("radius_m", round(radius, 2))
 
                         # Set new geometry
@@ -397,11 +397,11 @@ def detect(save_img=False):
                 # file.write(srs.ExportToWkt())
                 # file.close()
 
-                # df = gpd.GeoDataFrame(xy_coords, columns=['labels', 'confidences', 'x_easting', 'y_northing', 'geometry'])
+                # df = gpd.GeoDataFrame(xy_coords, columns=['labels', 'confidence', 'x_easting', 'y_northing', 'geometry'])
                 # df.crs = image_crs
                 # df.to_file(save_path + '.geojson', driver='GeoJSON')
                 #
-                # df_circle = gpd.GeoDataFrame(circle_, columns=['labels', 'confidences', 'radius', 'geometry'])
+                # df_circle = gpd.GeoDataFrame(circle_, columns=['labels', 'confidence', 'radius', 'geometry'])
                 # df_circle.crs = image_crs
                 # df_circle.to_file(save_path + '_circle.geojson', driver='GeoJSON')
     if save_label:
