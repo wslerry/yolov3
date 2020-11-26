@@ -147,16 +147,22 @@ def detect(save_img=False):
             with rio.open(path) as src:
                 try:
                     if src.crs != None:
-                        pass
+                        image_crs = src.crs
+                        id_crs = str(image_crs).split(":")
+                        id_crs = int(id_crs[1])
+                        affine = src.transform
+                        src_meta = src.profile
+                        src_imgwidth = src.profile['width']
+                        src_imgheight = src.profile['height']
                 except:
                     raise ValueError("Image not a geospatial data!")
-                image_crs = src.crs
-                id_crs = str(image_crs).split(":")
-                id_crs = int(id_crs[1])
-                affine = src.transform
-                src_meta = src.profile
-                src_imgwidth = src.profile['width']
-                src_imgheight = src.profile['height']
+                # image_crs = src.crs
+                # id_crs = str(image_crs).split(":")
+                # id_crs = int(id_crs[1])
+                # affine = src.transform
+                # src_meta = src.profile
+                # src_imgwidth = src.profile['width']
+                # src_imgheight = src.profile['height']
         else:
             input_img = cv2.imread(path)
             src_imgwidth, src_imgheight = input_img.shape[0], input_img.shape[1]
