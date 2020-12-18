@@ -35,6 +35,10 @@ def detect(save_img=False):
     else:
         deleteFilesIn(out)
 
+    # create temporary folder for tiles and as a new source folder
+    os_temp_dir = tempfile.gettempdir()
+    temp_path = os.path.join(os_temp_dir, "yolov3_tiles_operation")
+
     if opt.geo:
         if opt.save_geom:
             if not os.path.exists(out + "/points"):
@@ -42,9 +46,7 @@ def detect(save_img=False):
             if not os.path.exists(out + "/canopy"):
                 os.makedirs(out + "/canopy", exist_ok=True)
 
-        # create temporary folder for tiles and as a new source folder
-        os_temp_dir = tempfile.gettempdir()
-        temp_path = os.path.join(os_temp_dir, "yolov3_tiles_operation")
+        # # create temporary folder for tiles and as a new source folder
         if not os.path.exists(temp_path):
             os.mkdir(temp_path)
         else:
