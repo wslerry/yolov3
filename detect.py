@@ -59,7 +59,7 @@ def detect(save_img=False):
                 src_meta = src.profile
                 img_size = int(src_meta['width']/64) * 64
                 if img_size > 1024:
-                    print("Image is bigger then 1024px, image will be tiled!")
+                    print("Image is bigger then 2048px, image will be tiled!")
                     # new image size setting.
                     img_size = 1024
                     # then create tiles images
@@ -344,7 +344,7 @@ def detect(save_img=False):
                         poly.AddGeometry(ring)
 
                         outFeature_canopy.SetField("class", names[int(cls)])
-                        outFeature_canopy.SetField("confidence", float(conf))
+                        outFeature_canopy.SetField("confidence", round(float(conf), 2))
                         outFeature_canopy.SetField("radius_m", round(radius, 2))
 
                         # Set new geometry
@@ -425,7 +425,7 @@ def detect(save_img=False):
             os.system('open ' + save_path)
 
     if opt.geo:
-        shutil.rmtree(temp_path)
+        shutil.rmtree(temp_path, ignore_errors=True)
     # print(f'Total predicted {names[int(c)]} : {sum(total_predicted_box)} ')
     print('Done. (%.3fs)' % (time.time() - t0))
 
@@ -437,7 +437,7 @@ if __name__ == '__main__':
     parser.add_argument('--weights', type=str, default='weights/yolov3-spp-ultralytics.pt', help='weights path')
     parser.add_argument('--source', type=str, default='data/samples', help='source')  # input file/folder, 0 for webcam
     parser.add_argument('--output', type=str, default='./output', help='output folder')  # output folder
-    parser.add_argument('--img-size', type=int, default=512, help='inference size (pixels)')
+    parser.add_argument('--img-size', type=int, default=1024, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.3, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='IOU threshold for NMS')
     parser.add_argument('--fourcc', type=str, default='mp4v', help='output video codec (verify ffmpeg support)')
