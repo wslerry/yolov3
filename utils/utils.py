@@ -920,12 +920,13 @@ def to_tiles(input_img, output_dir, xsize, ysize):
         idx += 1
         bnds.append(idx - 1)
 
+    temp_out_dir = tempfile.TemporaryFile()
+
     # get only filename without extension
     output_filename = os.path.splitext(os.path.basename(input_img))[0]
 
-    # n_ims_nonull = 0
-    dx = int((1. - 0.2) * tile_size_x)
-    dy = int((1. - 0.2) * tile_size_y)
+    dx = int((1. - 0.05) * tile_size_x)
+    dy = int((1. - 0.05) * tile_size_y)
 
     count = 0
     for i in range(0, x_size, dx): #slice x-axis
@@ -949,7 +950,8 @@ def to_tiles(input_img, output_dir, xsize, ysize):
             # translateoptions = gdal.TranslateOptions(bandList=bnds,
             #                                          noData="none",
             #                                          srcWin=[i, j, tile_size_x, tile_size_y])
-            slice_filename = "" + str(out_path) + "/" + str(output_filename) + "_" + str(count) + ".tif"
+            # slice_filename = "" + str(temp_out_dir) + "/" + str(output_filename) + "_" + str(count) + ".tif"
+            slice_filename = os.path.join(temp_out_dir, str(output_filename) + "_" + str(count) + ".tif")
             gdal.Translate(slice_filename, ds, options=translateoptions)
 
             with rio.open(slice_filename) as src:
@@ -968,7 +970,7 @@ def to_tiles(input_img, output_dir, xsize, ysize):
                 continue
             else:
                 out_img = np.transpose(window_c, (2, 0, 1))
-                outpath=slice_filename
+                outpath = os.path.join(out_path, str(output_filename) + "_" + str(count) + ".tif")
                 with rio.open(outpath, 'w', **src_meta) as dst:
                     dst.write(out_img, [3, 2, 1])
 
@@ -984,6 +986,8 @@ def to_tiles(input_img, output_dir, xsize, ysize):
     vrt_output = out_path + "/" + str(output_filename)+"_tiles_vrt.vrt"
     vrt_opt = gdal.BuildVRTOptions(VRTNodata='none', srcNodata="NaN")
     gdal.BuildVRT(vrt_output, listOfFiles, options=vrt_opt)
+
+    temp_out_dir.close()
 
 def mergeshp(input, output):
     ogr2ogr.main(["", "-f", "ESRI Shapefile", output, input])
