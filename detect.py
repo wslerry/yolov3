@@ -4,6 +4,7 @@ from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
 import rasterio as rio
+from PIL import Image
 import pandas as pd
 # import geopandas as gpd
 #from shapely.geometry import Point, Polygon
@@ -57,17 +58,29 @@ def detect(save_img=False):
             # Get geographic data from image using rasterio
             with rio.open(source) as src:
                 src_meta = src.profile
-                img_size = int(src_meta['width']/64) * 64
-                if img_size > 1024:
-                    print("Image is bigger then 2048px, image will be tiled!")
-                    # new image size setting.
-                    img_size = 1024
+                _img_size_w = src_meta['width'] #int(src_meta['width'] / 32) * 32
+                _img_size_h = src_meta['height'] #int(src_meta['height'] / 32) * 32
+                max_dimension = 512
+                if _img_size_w > max_dimension:
                     # then create tiles images
-                    to_tiles(opt.source, temp_path, img_size, img_size)
+                    print("-")
+                    to_tiles(source, temp_path, max_dimension, max_dimension)
+                elif _img_size_h > max_dimension:
+                    print("--")
+                    to_tiles(source, temp_path, max_dimension, max_dimension)
                 else:
-                    img_size = img_size
-        else:
-            pass
+                    if _img_size_w < _img_size_h:
+                        print("---+")
+                        img_size = _img_size_w
+                    elif _img_size_w > _img_size_h:
+                        print("---x")
+                        img_size = _img_size_h
+                    elif _img_size_w == _img_size_h:
+                        print("---=")
+                        img_size = _img_size_w
+    else:
+        print("----")
+        pass
 
     # Initialize model
     model = Darknet(opt.cfg, img_size)
@@ -120,13 +133,17 @@ def detect(save_img=False):
         dataset = LoadStreams(source, img_size=img_size)
     else:
         save_img = True
+        torch.backends.cudnn.benchmark = True
         if opt.geo:
-            if img_size == 1024:
+            if img_size == 512:
+                print("+")
                 dataset = LoadImages(temp_path, img_size=img_size)
             else:
-                dataset = LoadImages(source, img_size=img_size)
+                print("++")
+                dataset = LoadImages(source, img_size=img_size*2)
         else:
-            dataset = LoadImages(source, img_size=img_size)
+            print("+++")
+            dataset = LoadImages(source, img_size=img_size*2)
 
     # Get names and colors
     names = load_classes(opt.names)
@@ -437,7 +454,7 @@ if __name__ == '__main__':
     parser.add_argument('--weights', type=str, default='weights/yolov3-spp-ultralytics.pt', help='weights path')
     parser.add_argument('--source', type=str, default='data/samples', help='source')  # input file/folder, 0 for webcam
     parser.add_argument('--output', type=str, default='./output', help='output folder')  # output folder
-    parser.add_argument('--img-size', type=int, default=1024, help='inference size (pixels)')
+    parser.add_argument('--img-size', type=int, default=512, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.3, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='IOU threshold for NMS')
     parser.add_argument('--fourcc', type=str, default='mp4v', help='output video codec (verify ffmpeg support)')

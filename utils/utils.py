@@ -17,6 +17,7 @@ import torchvision
 from tqdm import tqdm
 from osgeo import gdal
 from utils import ogr2ogr
+import rasterio as rio
 
 from . import torch_utils  # , google_utils
 
@@ -903,6 +904,8 @@ def to_tiles(input_img, output_dir, xsize, ysize):
     tile_size_x = xsize
     tile_size_y = ysize
 
+    win_size = tile_size_y * tile_size_x
+
     out_path = output_dir
     print(f"Tiles has been save in {out_path}")
 
@@ -920,17 +923,58 @@ def to_tiles(input_img, output_dir, xsize, ysize):
     # get only filename without extension
     output_filename = os.path.splitext(os.path.basename(input_img))[0]
 
+    # n_ims_nonull = 0
+    dx = int((1. - 0.2) * tile_size_x)
+    dy = int((1. - 0.2) * tile_size_y)
+
     count = 0
-    for i in range(0, x_size, tile_size_x):
-        for j in range(0, y_size, tile_size_y):
+    for i in range(0, x_size, dx): #slice x-axis
+        for j in range(0, y_size, dy): #slice y-axis
             count += 1
+            if (count % 50) == 0:
+                print(count)
+
+            # make sure we don't have a tiny image on the edge
+            if j + tile_size_y > y_size:
+                y = y_size - tile_size_y
+            else:
+                y = j
+            if i + tile_size_x > x_size:
+                x = x_size - tile_size_x
+            else:
+                x = i
+
             translateoptions = gdal.TranslateOptions(bandList=bnds,
-                                                     srcWin=[i, j, tile_size_x, tile_size_y])
+                                                     srcWin=[i, j, tile_size_x + x, tile_size_y + y])
             # translateoptions = gdal.TranslateOptions(bandList=bnds,
             #                                          noData="none",
             #                                          srcWin=[i, j, tile_size_x, tile_size_y])
-            gdal.Translate("" + str(out_path) + "/" + str(output_filename) + "_" + str(count) + ".tif",
-                           ds, options=translateoptions)
+            slice_filename = "" + str(out_path) + "/" + str(output_filename) + "_" + str(count) + ".tif"
+            gdal.Translate(slice_filename, ds, options=translateoptions)
+
+            with rio.open(slice_filename) as src:
+                src_meta = src.profile
+
+            # get black and white image
+            window_c = cv2.imread(slice_filename, cv2.IMREAD_LOAD_GDAL)
+            window = cv2.cvtColor(window_c, cv2.COLOR_RGB2GRAY)
+            ret, thresh1 = cv2.threshold(window, 2, 255, cv2.THRESH_BINARY)
+            non_zero_counts = cv2.countNonZero(thresh1)
+            zero_counts = win_size - non_zero_counts
+            zero_frac = float(zero_counts) / win_size
+
+            if zero_frac >= 0.2:
+                print("Zero frac too high at:", zero_frac)
+                continue
+            else:
+                out_img = np.transpose(window_c, (2, 0, 1))
+                outpath=slice_filename
+                with rio.open(outpath, 'w', **src_meta) as dst:
+                    dst.write(out_img, [3, 2, 1])
+
+                # cv2.imwrite(outpath, window_c)
+
+
             sleep(0.01)
     print('Done! Total tiles : {}'.format(count))
 
