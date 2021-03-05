@@ -935,10 +935,12 @@ def to_tiles(input_img, output_dir, xsize, ysize):
                 y = y_size - tile_size_y
             else:
                 y = j
+
             if i + tile_size_x > x_size:
                 x = x_size - tile_size_x
             else:
                 x = i
+                print(f"x : {x}, y : {y}")
 
             translateoptions = gdal.TranslateOptions(bandList=bnds,
                                                      noData="0",
