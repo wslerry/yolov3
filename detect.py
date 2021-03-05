@@ -58,28 +58,27 @@ def detect(save_img=False):
             # Get geographic data from image using rasterio
             with rio.open(source) as src:
                 src_meta = src.profile
-                _img_size_w = src_meta['width'] #int(src_meta['width'] / 32) * 32
-                _img_size_h = src_meta['height'] #int(src_meta['height'] / 32) * 32
-                max_dimension = 512
-                if _img_size_w > max_dimension:
-                    # then create tiles images
-                    print("-")
-                    to_tiles(source, temp_path, max_dimension, max_dimension)
-                elif _img_size_h > max_dimension:
-                    print("--")
-                    to_tiles(source, temp_path, max_dimension, max_dimension)
-                else:
-                    if _img_size_w < _img_size_h:
-                        print("---+")
-                        img_size = _img_size_w
-                    elif _img_size_w > _img_size_h:
-                        print("---x")
-                        img_size = _img_size_h
-                    elif _img_size_w == _img_size_h:
-                        print("---=")
-                        img_size = _img_size_w
+                _img_size_w = int(src_meta['width'] / 32) * 32
+                _img_size_h = int(src_meta['height'] / 32) * 32
+                max_dimension = 1024
+            if _img_size_w > max_dimension:
+                # then create tiles images
+                print("check1")
+                to_tiles(source, temp_path, max_dimension, max_dimension)
+            elif _img_size_h > max_dimension:
+                print("check2")
+                to_tiles(source, temp_path, max_dimension, max_dimension)
+            else:
+                if _img_size_w < _img_size_h:
+                    print("check3")
+                    img_size = _img_size_w
+                elif _img_size_w > _img_size_h:
+                    print("check4")
+                    img_size = _img_size_h
+                elif _img_size_w == _img_size_h:
+                    print("check5")
+                    img_size = _img_size_w
     else:
-        print("----")
         pass
 
     # Initialize model
@@ -135,14 +134,14 @@ def detect(save_img=False):
         save_img = True
         torch.backends.cudnn.benchmark = True
         if opt.geo:
-            if img_size == 512:
-                print("+")
+            if img_size == 1024:
+                print("OPT1 : get image from temporary folder")
                 dataset = LoadImages(temp_path, img_size=img_size)
             else:
-                print("++")
+                print("OPT2")
                 dataset = LoadImages(source, img_size=img_size*2)
         else:
-            print("+++")
+            print("OPT3")
             dataset = LoadImages(source, img_size=img_size*2)
 
     # Get names and colors
@@ -449,9 +448,9 @@ if __name__ == '__main__':
     parser.add_argument('--weights', type=str, default='weights/yolov3-spp-ultralytics.pt', help='weights path')
     parser.add_argument('--source', type=str, default='data/samples', help='source')  # input file/folder, 0 for webcam
     parser.add_argument('--output', type=str, default='./output', help='output folder')  # output folder
-    parser.add_argument('--img-size', type=int, default=512, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.3, help='object confidence threshold')
-    parser.add_argument('--iou-thres', type=float, default=0.6, help='IOU threshold for NMS')
+    parser.add_argument('--img-size', type=int, default=1024, help='inference size (pixels)')
+    parser.add_argument('--conf-thres', type=float, default=0.2, help='object confidence threshold')
+    parser.add_argument('--iou-thres', type=float, default=0.1, help='IOU threshold for NMS')
     parser.add_argument('--fourcc', type=str, default='mp4v', help='output video codec (verify ffmpeg support)')
     parser.add_argument('--half', action='store_true', help='half precision FP16 inference')
     parser.add_argument('--device', default='', help='device id (i.e. 0 or 0,1) or cpu')
