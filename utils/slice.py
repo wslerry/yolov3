@@ -119,6 +119,11 @@ def slice_im(image_path, out_name, out_dir, sliceHeight=416, sliceWidth=416,
 
             # extract image
             window_c = image0[y:y + sliceHeight, x:x + sliceWidth]
+            # outpath = os.path.join(
+            #     out_dir,
+            #     out_name + slice_sep + str(n_ims) + ext)
+            # cv2.imwrite(outpath, window_c)
+
             # get black and white image
             if use_cv2:
                 window = cv2.cvtColor(window_c, cv2.COLOR_BGR2GRAY)
@@ -155,8 +160,8 @@ def slice_im(image_path, out_name, out_dir, sliceHeight=416, sliceWidth=416,
                     cv2.imwrite(outpath, window_c)
                 n_ims_nonull += 1
 
-    print("Num slices:", n_ims, "Num non-null slices:", n_ims_nonull,
-          "sliceHeight", sliceHeight, "sliceWidth", sliceWidth)
-    print("Time to slice", image_path, time.time()-t0, "seconds")
+    # print("Num slices:", n_ims, "Num non-null slices:", n_ims_nonull,
+    #       "sliceHeight", sliceHeight, "sliceWidth", sliceWidth)
+    # print("Time to slice", image_path, time.time()-t0, "seconds")
 
     return

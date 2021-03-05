@@ -174,14 +174,8 @@ def detect(save_img=False):
                         src_imgwidth = src.profile['width']
                         src_imgheight = src.profile['height']
                 except:
-                    raise ValueError("Image not a geospatial data!")
-                # image_crs = src.crs
-                # id_crs = str(image_crs).split(":")
-                # id_crs = int(id_crs[1])
-                # affine = src.transform
-                # src_meta = src.profile
-                # src_imgwidth = src.profile['width']
-                # src_imgheight = src.profile['height']
+                    raise IOError("Image not a geospatial data!")
+
         else:
             input_img = cv2.imread(path)
             src_imgwidth, src_imgheight = input_img.shape[0], input_img.shape[1]
@@ -441,8 +435,9 @@ def detect(save_img=False):
         if platform == 'darwin':  # MacOS
             os.system('open ' + save_path)
 
-    if opt.geo:
-        shutil.rmtree(temp_path, ignore_errors=True)
+    # if opt.geo:
+    #     shutil.rmtree(temp_path, ignore_errors=True)
+    shutil.rmtree(temp_path, ignore_errors=True)
     # print(f'Total predicted {names[int(c)]} : {sum(total_predicted_box)} ')
     print('Done. (%.3fs)' % (time.time() - t0))
 

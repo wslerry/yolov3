@@ -896,8 +896,8 @@ def tiles_list(dirName):
 
 
 def to_tiles(input_img, output_dir, xsize, ysize):
-    if xsize < 1 or ysize < 1:
-        raise Exception(print("[ ERROR! ] width or height dimension should be more then 1px"))
+    if xsize < 32 or ysize < 32:
+        raise Exception(print("[ ERROR! ] width or height dimension should be more then 32px"))
     else:
         pass
 
@@ -907,7 +907,6 @@ def to_tiles(input_img, output_dir, xsize, ysize):
     win_size = tile_size_y * tile_size_x
 
     out_path = output_dir
-    print(f"Tiles has been save in {out_path}")
 
     ds = gdal.Open(input_img)
     band = ds.GetRasterBand(1)
@@ -920,20 +919,18 @@ def to_tiles(input_img, output_dir, xsize, ysize):
         idx += 1
         bnds.append(idx - 1)
 
-    temp_out_dir = tempfile.TemporaryFile()
-
     # get only filename without extension
     output_filename = os.path.splitext(os.path.basename(input_img))[0]
 
-    dx = int((1. - 0.05) * tile_size_x)
-    dy = int((1. - 0.05) * tile_size_y)
+    dx = int((1. - 0.2) * tile_size_x)
+    dy = int((1. - 0.2) * tile_size_y)
 
     count = 0
     for i in range(0, x_size, dx): #slice x-axis
         for j in range(0, y_size, dy): #slice y-axis
             count += 1
-            if (count % 50) == 0:
-                print(count)
+            # if (count % 50) == 0:
+            #     print(count)
 
             # make sure we don't have a tiny image on the edge
             if j + tile_size_y > y_size:
@@ -946,48 +943,17 @@ def to_tiles(input_img, output_dir, xsize, ysize):
                 x = i
 
             translateoptions = gdal.TranslateOptions(bandList=bnds,
-                                                     srcWin=[i, j, tile_size_x + x, tile_size_y + y])
-            # translateoptions = gdal.TranslateOptions(bandList=bnds,
-            #                                          noData="none",
-            #                                          srcWin=[i, j, tile_size_x, tile_size_y])
-            # slice_filename = "" + str(temp_out_dir) + "/" + str(output_filename) + "_" + str(count) + ".tif"
-            slice_filename = os.path.join(temp_out_dir, str(output_filename) + "_" + str(count) + ".tif")
+                                                     noData="0",
+                                                     srcWin=[x, y,
+                                                             tile_size_x,
+                                                             tile_size_y])
+            slice_filename = os.path.join(str(out_path), str(output_filename) + "_" + str(count) + ".tif")
             gdal.Translate(slice_filename, ds, options=translateoptions)
 
-            with rio.open(slice_filename) as src:
-                src_meta = src.profile
+    print(f"Tiles has been save in {out_path}\n")
+    print('Done! Total tiles : {}\n'.format(count))
 
-            # get black and white image
-            window_c = cv2.imread(slice_filename, cv2.IMREAD_LOAD_GDAL)
-            window = cv2.cvtColor(window_c, cv2.COLOR_RGB2GRAY)
-            ret, thresh1 = cv2.threshold(window, 2, 255, cv2.THRESH_BINARY)
-            non_zero_counts = cv2.countNonZero(thresh1)
-            zero_counts = win_size - non_zero_counts
-            zero_frac = float(zero_counts) / win_size
-
-            if zero_frac >= 0.2:
-                print("Zero frac too high at:", zero_frac)
-                continue
-            else:
-                out_img = np.transpose(window_c, (2, 0, 1))
-                outpath = os.path.join(out_path, str(output_filename) + "_" + str(count) + ".tif")
-                with rio.open(outpath, 'w', **src_meta) as dst:
-                    dst.write(out_img, [3, 2, 1])
-
-                # cv2.imwrite(outpath, window_c)
-
-
-            sleep(0.01)
-    print('Done! Total tiles : {}'.format(count))
-
-    # imgfolder2TFW(out_path)
-    # Get the list of all files in directory tree at given path
-    listOfFiles = tiles_list(out_path)
-    vrt_output = out_path + "/" + str(output_filename)+"_tiles_vrt.vrt"
-    vrt_opt = gdal.BuildVRTOptions(VRTNodata='none', srcNodata="NaN")
-    gdal.BuildVRT(vrt_output, listOfFiles, options=vrt_opt)
-
-    temp_out_dir.close()
+    return
 
 def mergeshp(input, output):
     ogr2ogr.main(["", "-f", "ESRI Shapefile", output, input])
