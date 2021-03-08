@@ -136,8 +136,11 @@ def detect(save_img=False):
         if opt.geo:
             if img_size == 1024:
                 print("OPT1 : get image from temporary folder")
-                dataset = LoadImages(temp_path, img_size=img_size)
-            else:
+                if not os.listdir(temp_path):
+                    dataset = LoadImages(source, img_size=int(img_size*1.5))
+                else:
+                    dataset = LoadImages(temp_path, img_size=int(img_size*1.5))
+            elif img_size < 1024:
                 print("OPT2")
                 dataset = LoadImages(source, img_size=img_size*2)
         else:

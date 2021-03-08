@@ -922,13 +922,13 @@ def to_tiles(input_img, output_dir, xsize, ysize):
     # get only filename without extension
     output_filename = os.path.splitext(os.path.basename(input_img))[0]
 
-    dx = int((1. + 0.002) * tile_size_x)
-    dy = int((1. + 0.002) * tile_size_y)
+    dx = int((1. - 0.01) * tile_size_x)
+    dy = int((1. - 0.01) * tile_size_y)
     print(dx, dy)
 
     count = 0
-    for i in range(0, x_size, dx): #slice x-axis
-        for j in range(0, y_size, dy): #slice y-axis
+    for j in range(0, y_size, dy): #slice x-axis
+        for i in range(0, x_size, dx): #slice y-axis
             count += 1
             # make sure we don't have a tiny image on the edge
             if j + tile_size_y > y_size:
