@@ -158,6 +158,7 @@ def detect(save_img=False):
     total_predicted_box = list()
     class_list = list()  # will be save into classes.txt
     for path, img, im0s, vid_cap in dataset:
+        print('\n', path, img.shape, im0s.shape, end=' ')
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
@@ -177,7 +178,6 @@ def detect(save_img=False):
                         src_imgheight = src.profile['height']
                 except:
                     raise IOError("Image not a geospatial data!")
-
         else:
             input_img = cv2.imread(path)
             src_imgwidth, src_imgheight = input_img.shape[0], input_img.shape[1]
@@ -213,6 +213,7 @@ def detect(save_img=False):
 
         # Process detections
         for i, det in enumerate(pred):  # detections per image
+            print(f"i : {i}, detection: {det}")
             if webcam:  # batch_size >= 1
                 p, s, im0 = path[i], '%g: ' % i, im0s[i]
             else:

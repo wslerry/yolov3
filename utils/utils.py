@@ -504,7 +504,6 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
     Returns detections with shape:
         nx6 (x1, y1, x2, y2, conf, cls)
     """
-
     # Box constraints
     min_wh, max_wh = 2, 4096  # (pixels) minimum and maximum box width and height
 
@@ -548,6 +547,7 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
 
         # If none remain process next image
         n = x.shape[0]  # number of boxes
+
         if not n:
             continue
 
