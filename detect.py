@@ -213,7 +213,6 @@ def detect(save_img=False):
 
         # Process detections
         for i, det in enumerate(pred):  # detections per image
-            print(f"i : {i}, detection: {det}")
             if webcam:  # batch_size >= 1
                 p, s, im0 = path[i], '%g: ' % i, im0s[i]
             else:
@@ -426,6 +425,7 @@ def detect(save_img=False):
                 # df_circle = gpd.GeoDataFrame(circle_, columns=['labels', 'confidence', 'radius', 'geometry'])
                 # df_circle.crs = image_crs
                 # df_circle.to_file(save_path + '_circle.geojson', driver='GeoJSON')
+
     if save_label:
         df = pd.DataFrame(class_list, columns=['classes'])
         group_data = df.groupby(df['classes'], sort=False)

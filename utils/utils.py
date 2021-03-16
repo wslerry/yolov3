@@ -525,9 +525,11 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
 
         # Compute conf
         x[..., 5:] *= x[..., 4:5]  # conf = obj_conf * cls_conf
+        print("x before box set:", x.shape)
 
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
         box = xywh2xyxy(x[:, :4])
+        print("box as x:x[:, :4]", x.shape)
 
         # Detections matrix nx6 (xyxy, conf, cls)
         if multi_label:
@@ -574,6 +576,7 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
             i = iou.max(0)[0] < iou_thres
 
         output[xi] = x[i]
+        # print(output)
     return output
 
 
