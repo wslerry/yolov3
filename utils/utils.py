@@ -576,7 +576,7 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
             i = iou.max(0)[0] < iou_thres
 
         output[xi] = x[i]
-        # print(output)
+
     return output
 
 

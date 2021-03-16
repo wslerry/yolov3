@@ -26,13 +26,6 @@ def detect(save_img=False):
     else:  # darknet format
         load_darknet_weights(model, weights)
 
-    # # Second-stage classifier
-    # classify = False
-    # if classify:
-    #     modelc = torch_utils.load_classifier(name='resnet101', n=2)  # initialize
-    #     modelc.load_state_dict(torch.load('weights/resnet101.pt', map_location=device)['model'])  # load weights
-    #     modelc.to(device).eval()
-
     # Eval mode
     model.to(device).eval()
 
@@ -78,7 +71,13 @@ def detect(save_img=False):
     img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
     _ = model(img.half() if half else img.float()) if device.type != 'cpu' else None  # run once
     preds_list = list()
+    img_detections = list()
+    imgs = list()
     for path, img, im0s, vid_cap in dataset:
+        print("path :", path)
+        print("resize img :", img.shape)
+        print("original im0s :", im0s.shape)
+        # use resized image for detection
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
@@ -94,10 +93,16 @@ def detect(save_img=False):
         if half:
             pred = pred.float()
 
-        # Apply NMS
-        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres,
-                                   multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
         preds_list.append(pred)
+
+    # Apply NMS
+    detections = non_max_suppression(torch.cat(preds_list, 1), opt.conf_thres, opt.iou_thres,
+                               multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
+    img_detections.extend(detections)
+    imgs.extend(path)
+    print(img_detections)
+    print(imgs)
+
         # # Apply Classifier
         # if classify:
         #     pred = apply_classifier(pred, modelc, img, im0s)
@@ -131,6 +136,7 @@ def detect(save_img=False):
         #             if save_img or view_img:  # Add bbox to image
         #                 label = '%s %.2f' % (names[int(cls)], conf)
         #                 plot_one_box(xyxy, im0, label=label, color=colors[int(cls)])
+
 
     # print("pred_list: \n", preds_list)
     print('Done. (%.3fs)' % (time.time() - t0))
