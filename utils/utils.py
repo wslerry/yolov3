@@ -525,11 +525,9 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
 
         # Compute conf
         x[..., 5:] *= x[..., 4:5]  # conf = obj_conf * cls_conf
-        print("x before box set:", x.shape)
 
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
         box = xywh2xyxy(x[:, :4])
-        print("box as x:x[:, :4]", x.shape)
 
         # Detections matrix nx6 (xyxy, conf, cls)
         if multi_label:
@@ -578,6 +576,45 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
         output[xi] = x[i]
 
     return output
+
+
+# Malisiewicz et al.
+def non_max_suppression_fast(boxes, overlapThresh):
+    # if there are no boxes, return an empty list
+    if len(boxes) == 0:
+        return []
+    # initialize the list of picked indexes
+    pick = []
+
+    # grab the coordinates of the bounding boxes
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    x2 = boxes[:, 2]
+    y2 = boxes[:, 3]
+
+    # compute the area of the bounding boxes and sort the bounding
+	# boxes by the bottom-right y-coordinate of the bounding box
+    area = (x2 - x1 + 1) * (y2 - y1 + 1)
+    idxs = np.argsort(y2)
+
+    while len(idxs) > 0:
+        last = len(idxs) - 1
+        i = idxs[last]
+        pick.append(i)
+
+        xx1 = np.maximum(x1[i], x1[idxs[:last]])
+        yy1 = np.maximum(y1[i], y1[idxs[:last]])
+        xx2 = np.minimum(x2[i], x2[idxs[:last]])
+        yy2 = np.minimum(y2[i], y2[idxs[:last]])
+		# compute the width and height of the bounding box
+        w = np.maximum(0, xx2 - xx1 + 1)
+        h = np.maximum(0, yy2 - yy1 + 1)
+        # compute the ratio of overlap
+        overlap = (w * h) / area[idxs[:last]]
+		# delete all indexes from the index list that have
+        idxs = np.delete(idxs, np.concatenate(([last], np.where(overlap > overlapThresh)[0])))
+
+    return boxes[pick]
 
 
 def get_yolo_layers(model):
@@ -864,6 +901,7 @@ def output_to_target(output, width, height):
 
     return np.array(targets)
 
+
 # Geospatial functions
 def deleteFilesIn(dirName):
     import shutil
@@ -898,6 +936,82 @@ def tiles_list(dirName):
     return allFiles
 
 
+def geo_params(img_in):
+    with rio.open(img_in) as src:
+        try:
+            if src.crs != None:
+                image_crs = src.crs
+                affine = src.transform
+                src_meta = src.profile
+        except IOError as e:
+            print(e)
+
+    return image_crs, affine, src_meta
+
+
+def sliding_window(image, windowSize):
+    """
+    image: str, path to file directory
+    windowSize: size of sliding window
+    example:
+        sliding_window(r'path/to/your/image', (416,416))
+    """
+
+    # get filename without extension
+    filename = os.path.splitext(os.path.basename(image))[0]
+    # create a temporary folder in TEMP
+    _dir = tempfile.gettempdir()
+    temp_dir = os.path.join(_dir, "tiled_imgs")
+
+    # check if temporary directory exist, and create it if not available
+    if not os.path.exists(temp_dir):
+        os.mkdir(temp_dir)
+    else:
+        deleteFilesIn(temp_dir)  # delete files within folder
+
+    # get metadata using gdal
+    ds = gdal.Open(image)
+    band = ds.GetRasterBand(1)
+    x_size = band.XSize
+    y_size = band.YSize
+    band_list = ds.RasterCount
+    bnds = list()
+    bnds_idx = 1
+    for i in range(band_list):
+        bnds_idx += 1
+        bnds.append(bnds_idx - 1)
+
+    stepSizex = int((1. - 0.01) * windowSize[1])
+    stepSizey = int((1. - 0.01) * windowSize[0])
+
+    # dy = int((1. - 0.2) * windowSize)
+    # slide a window across the image
+    cidx = 0
+    for y in range(0, y_size, stepSizey):
+        for x in range(0, x_size, stepSizex):
+            cidx += 1
+            if y + windowSize[0] > y_size:
+                y = y_size - windowSize[0]
+            else:
+                y = y
+
+            if x + windowSize[1] > x_size:
+                x = x_size - windowSize[1]
+            else:
+                x = x
+            translateoptions = gdal.TranslateOptions(bandList=bnds,
+                                                     noData="0",
+                                                     srcWin=[x, y,
+                                                             windowSize[1],
+                                                             windowSize[0]])
+            tile = os.path.join(str(temp_dir), str(filename) + "_" + str(cidx) + ".tif")
+            gdal.Translate(tile, ds, options=translateoptions)
+
+            # yield the current window
+            # yield (tile, x, y, image[y:y + windowSize[0], x:x + windowSize[1]])
+            yield x, y, (temp_dir, tile)
+
+
 def to_tiles(input_img, output_dir, xsize, ysize):
     if xsize < 32 or ysize < 32:
         raise Exception(print("[ ERROR! ] width or height dimension should be more then 32px"))
@@ -930,8 +1044,8 @@ def to_tiles(input_img, output_dir, xsize, ysize):
     print(dx, dy)
 
     count = 0
-    for j in range(0, y_size, dy): #slice x-axis
-        for i in range(0, x_size, dx): #slice y-axis
+    for j in range(0, y_size, dy):  # slice x-axis
+        for i in range(0, x_size, dx):  # slice y-axis
             count += 1
             # make sure we don't have a tiny image on the edge
             if j + tile_size_y > y_size:
@@ -957,6 +1071,7 @@ def to_tiles(input_img, output_dir, xsize, ysize):
     print('Done! Total tiles : {}\n'.format(count))
 
     return
+
 
 def mergeshp(input, output):
     ogr2ogr.main(["", "-f", "ESRI Shapefile", output, input])

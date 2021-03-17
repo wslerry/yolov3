@@ -26,41 +26,16 @@ def detect(save_img=False):
     else:  # darknet format
         load_darknet_weights(model, weights)
 
+    # read main image
+    image = cv2.imread(source)
+
     # Eval mode
     model.to(device).eval()
-
-    # Fuse Conv2d + BatchNorm2d layers
-    # model.fuse()
-
-    # Export mode
-    if ONNX_EXPORT:
-        model.fuse()
-        img = torch.zeros((1, 3) + imgsz)  # (1, 3, 320, 192)
-        f = opt.weights.replace(opt.weights.split('.')[-1], 'onnx')  # *.onnx filename
-        torch.onnx.export(model, img, f, verbose=False, opset_version=11,
-                          input_names=['images'], output_names=['classes', 'boxes'])
-
-        # Validate exported model
-        import onnx
-        model = onnx.load(f)  # Load the ONNX model
-        onnx.checker.check_model(model)  # Check that the IR is well formed
-        print(onnx.helper.printable_graph(model.graph))  # Print a human readable representation of the graph
-        return
 
     # Half precision
     half = half and device.type != 'cpu'  # half precision only supported on CUDA
     if half:
         model.half()
-
-    # Set Dataloader
-    vid_path, vid_writer = None, None
-    if webcam:
-        view_img = True
-        torch.backends.cudnn.benchmark = True  # set True to speed up constant image size inference
-        dataset = LoadStreams(source, img_size=imgsz)
-    else:
-        save_img = True
-        dataset = LoadImages(source, img_size=imgsz)
 
     # Get names and colors
     names = load_classes(opt.names)
@@ -68,76 +43,80 @@ def detect(save_img=False):
 
     # Run inference
     t0 = time.time()
-    img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
-    _ = model(img.half() if half else img.float()) if device.type != 'cpu' else None  # run once
+    image0 = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
+    _ = model(image0.half() if half else image0.float()) if device.type != 'cpu' else None  # run once
+
     preds_list = list()
-    img_detections = list()
-    imgs = list()
-    for path, img, im0s, vid_cap in dataset:
-        print("path :", path)
-        print("resize img :", img.shape)
-        print("original im0s :", im0s.shape)
-        # use resized image for detection
-        img = torch.from_numpy(img).to(device)
-        img = img.half() if half else img.float()  # uint8 to fp16/32
-        img /= 255.0  # 0 - 255 to 0.0 - 1.0
-        if img.ndimension() == 3:
-            img = img.unsqueeze(0)
+    detections = list()
+    temp_dir = None
+
+    for (x, y, file0) in sliding_window(source, windowSize=(imgsz, imgsz)):
+        (temp_dir, image0) = file0
+        # get geographic parameters of input image, return error if failed!
+        image_crs, affine_coord, src_meta = geo_params(image0)
+
+        # read each image in temporary folder using opencv
+        image0 = cv2.imread(image0)  # BGR
+        (_H0, _W0) = image0.shape[:2]
+        image0 = letterbox(image0, new_shape=imgsz)[0]
+        image0 = image0[:, :, ::-1].transpose(2, 0, 1)
+        image0 = np.ascontiguousarray(image0)
+
+        image0 = torch.from_numpy(image0).to(device)
+        image0 = image0.half() if half else image0.float()  # uint8 to fp16/32
+        image0 /= 255.0  # 0 - 255 to 0.0 - 1.0
+        if image0.ndimension() == 3:
+            image0 = image0.unsqueeze(0)
 
         # Inference
         t1 = torch_utils.time_synchronized()
-        pred = model(img, augment=opt.augment)[0]
+        pred = model(image0, augment=opt.augment)[0]
         t2 = torch_utils.time_synchronized()
 
         # to float
         if half:
             pred = pred.float()
 
-        preds_list.append(pred)
+        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres,
+                                   multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
+        # convert all prediction boxes to geographical values
+        # get xyxy, confidence, and class from prediction results
+        for i, det in enumerate(pred):
+            if det is not None and len(det):
+                for *xyxy, conf, cls in det:
+                    # print(*xyxy, conf, cls)
+                    """
+                    x1y1
+                    +------+
+                    |      |
+                    +------+
+                            x2y2
+                    """
+                    c1, c2 = (xyxy[0], xyxy[1]), (xyxy[2], xyxy[3])
+                    (top, left) = (c1[0], c1[1])
+                    (bottom, right) = (c2[0], c2[1])
 
-    # Apply NMS
-    detections = non_max_suppression(torch.cat(preds_list, 1), opt.conf_thres, opt.iou_thres,
-                               multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
-    img_detections.extend(detections)
-    imgs.extend(path)
-    print(img_detections)
-    print(imgs)
+                    # convert to geographic. IMPORTANT!
+                    (x1, y1) = torch.mul(affine_coord * (top, left))
+                    (x2, y2) = torch.mul(affine_coord * (bottom, right))
+                    _xyxy = x1, y1, x2, y2
+                    print(_xyxy)
 
-        # # Apply Classifier
-        # if classify:
-        #     pred = apply_classifier(pred, modelc, img, im0s)
+                    # save all boxes params into list with geographical values
+                    # preds_list.append([x1, y1, x2, y2, conf, cls])
+                    # with open(os.path.join(out, 'test.txt'), 'a') as file:
+                    #     file.write(('%2f ' * 6 + '\n') % (*_xyxy, conf, round(int(cls), 0)))
 
-        # # Process detections
-        # for i, det in enumerate(pred):  # detections for image i
-        #     if webcam:  # batch_size >= 1
-        #         p, s, im0 = path[i], '%g: ' % i, im0s[i].copy()
-        #     else:
-        #         p, s, im0 = path, '', im0s
-        #
-        #     save_path = str(Path(out) / Path(p).name)
-        #     s += '%gx%g ' % img.shape[2:]  # print string
-        #     gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  #  normalization gain whwh
-        #     if det is not None and len(det):
-        #         # Rescale boxes from imgsz to im0 size
-        #         det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
-        #
-        #         # Print results
-        #         for c in det[:, -1].unique():
-        #             n = (det[:, -1] == c).sum()  # detections per class
-        #             s += '%g %ss, ' % (n, names[int(c)])  # add to string
-        #
-        #         # Write results
-        #         for *xyxy, conf, cls in det:
-        #             if save_txt:  # Write to file
-        #                 xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-        #                 with open(save_path[:save_path.rfind('.')] + '.txt', 'a') as file:
-        #                     file.write(('%g ' * 5 + '\n') % (cls, *xywh))  # label format
-        #
-        #             if save_img or view_img:  # Add bbox to image
-        #                 label = '%s %.2f' % (names[int(cls)], conf)
-        #                 plot_one_box(xyxy, im0, label=label, color=colors[int(cls)])
+    # prediction = non_max_suppression(torch.cat(preds_list, 1), opt.conf_thres, opt.iou_thres,
+    #                                  multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
+    # detections.extend(prediction)
 
-
+    # print(detections)
+    # # # Run second NMS
+    # predictions = non_max_suppression_fast(preds_list, opt.conf_thres, opt.iou_thres,
+    #                                  multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
+    # print(predictions)
+    shutil.rmtree(temp_dir)
     # print("pred_list: \n", preds_list)
     print('Done. (%.3fs)' % (time.time() - t0))
 
