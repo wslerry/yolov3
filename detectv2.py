@@ -20,13 +20,10 @@ def detect(save_img=False):
     model = Darknet(opt.cfg, imgsz)
 
     # Load weights
-    attempt_download(weights)
-    if weights.endswith('.pt'):  # pytorch format
-        model.load_state_dict(torch.load(weights, map_location=device)['model'])
-    else:  # darknet format
-        load_darknet_weights(model, weights)
+    load_darknet_weights(model, weights)
 
     # read main image
+    print(source)
     image = cv2.imread(source)
 
     # Eval mode
@@ -76,48 +73,68 @@ def detect(save_img=False):
         # to float
         if half:
             pred = pred.float()
+            print(pred)
 
-        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres,
-                                   multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
+        print(pred)
+
+        # pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres,
+        #                            multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
+        # print(pred)
         # convert all prediction boxes to geographical values
         # get xyxy, confidence, and class from prediction results
-        for i, det in enumerate(pred):
-            if det is not None and len(det):
-                for *xyxy, conf, cls in det:
-                    # print(*xyxy, conf, cls)
-                    """
-                    x1y1
-                    +------+
-                    |      |
-                    +------+
-                            x2y2
-                    """
-                    c1, c2 = (xyxy[0], xyxy[1]), (xyxy[2], xyxy[3])
-                    (top, left) = (c1[0], c1[1])
-                    (bottom, right) = (c2[0], c2[1])
+        # conver xyxy to xywh
+        # for i, det in enumerate(pred):
+        #     if det is not None and len(det):
+        #         for *xyxy, conf, cls in det:
+        #             print(*xyxy, conf, cls)
+        #             # """
+        #             # x1y1
+        #             # +------+
+        #             # |      |
+        #             # +------+
+        #             #         x2y2
+        #             # """
+        #             # print("x1y1    ")
+        #             # print("+------+")
+        #             # print("|      |")
+        #             # print("+------+")
+        #             # print("        x2y2")
+        #             # c1, c2 = (int(xyxy[0]), int(xyxy[1])), (int(xyxy[2]), int(xyxy[3]))
+        #             # (left, top) = (c1[0], c1[1])
+        #             # (width, height) = (c2[0] - left, c2[1] - top)
+        #             #
+        #             # cent_x = left + (width / 2)
+        #             # cent_y = top + (height / 2)
+        #             #
+        #             # (cent_x, cent_y) = affine_coord * (cent_x, cent_y)
+        #             #
+        #             # xywh_geom = xywh2geom(left, top, width, height, affine_coord)
+        #             # print(f"xywh_geom\n{xywh_geom}")
+        #             #
+        #             # # save all boxes params into list with geographical values
+        #             # preds_list.append([cent_x, cent_y, xywh_geom[2], xywh_geom[3], conf, cls])
+        #             # print(preds_list)
+        #             # with open(os.path.join(out, 'test.txt'), 'a') as file:
+        #             #     file.write(('%2f ' * 6 + '\n') % (*_xyxy, conf, round(int(cls), 0)))
 
-                    # convert to geographic. IMPORTANT!
-                    (x1, y1) = torch.mul(affine_coord * (top, left))
-                    (x2, y2) = torch.mul(affine_coord * (bottom, right))
-                    _xyxy = x1, y1, x2, y2
-                    print(_xyxy)
+    # preds_list = torch.Tensor([preds_list])
+    # print('Pred_list shape :\n', preds_list.shape)
 
-                    # save all boxes params into list with geographical values
-                    # preds_list.append([x1, y1, x2, y2, conf, cls])
-                    # with open(os.path.join(out, 'test.txt'), 'a') as file:
-                    #     file.write(('%2f ' * 6 + '\n') % (*_xyxy, conf, round(int(cls), 0)))
 
-    # prediction = non_max_suppression(torch.cat(preds_list, 1), opt.conf_thres, opt.iou_thres,
+
+    # predictions = non_max_suppression_fast(preds_list, 0.4)
+    # print("[x] after applying non-maximum, %d bounding boxes" % (len(predictions)))
+    # predictions = non_max_suppression(preds_list, 0.0, 0.7,
     #                                  multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
-    # detections.extend(prediction)
+    #
+    # for i, det in enumerate(predictions):
+    #     if det is not None and len(det):
+    #         print('OK!!!!!!!!!!')
+    #     else:
+    #         print('No detection ?')
 
-    # print(detections)
-    # # # Run second NMS
-    # predictions = non_max_suppression_fast(preds_list, opt.conf_thres, opt.iou_thres,
-    #                                  multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
-    # print(predictions)
     shutil.rmtree(temp_dir)
-    # print("pred_list: \n", preds_list)
+
     print('Done. (%.3fs)' % (time.time() - t0))
 
 

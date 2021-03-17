@@ -123,6 +123,33 @@ def xywh2xyxy(x):
     y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
     return y
 
+def euclidean_distance(x1, x0, y1, y0):
+    distance = math.sqrt(((x1 - x0) ** 2) + ((y1 - y0) ** 2))
+    return distance
+
+
+def xywh2geom(left, top, width, height, aff):
+    (x0, y0) = aff * (left, top)
+    (x1, y1) = aff * (left + width, top)
+    (x2, y2) = aff * (left + width, top + height)
+    (x3, y3) = aff * (left, top + height)
+
+    width_m = euclidean_distance(x1, x0, y1, y0)
+    height_m = euclidean_distance(x3, x0, y3, y0)
+
+    return x0, y0, width_m, height_m
+
+
+def geom2xywh(x, y, w, h, aff):
+    x0, y0 = ~aff * (x, y)
+    x1, y1 = ~aff * (x + w, y)
+    x2, y2 = ~aff * (x + w, y + h)
+    x3, y3 = ~aff * (x, y + h)
+
+    width = euclidean_distance(x1, x0, y1, y0)
+    height = euclidean_distance(x3, x0, y3, y0)
+
+    return int(x0), int(y0), int(width), int(height)
 
 # def xywh2xyxy(box):
 #     # Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2]
@@ -583,6 +610,7 @@ def non_max_suppression_fast(boxes, overlapThresh):
     # if there are no boxes, return an empty list
     if len(boxes) == 0:
         return []
+    print(f'Length : {len(boxes)}')
     # initialize the list of picked indexes
     pick = []
 
