@@ -123,31 +123,32 @@ def xywh2xyxy(x):
     y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
     return y
 
+
 def euclidean_distance(x1, x0, y1, y0):
     distance = math.sqrt(((x1 - x0) ** 2) + ((y1 - y0) ** 2))
     return distance
 
 
-def xywh2geom(left, top, width, height, aff):
+def xywh2geom(left, top, width, height, aff, device):
     (x0, y0) = aff * (left, top)
     (x1, y1) = aff * (left + width, top)
-    (x2, y2) = aff * (left + width, top + height)
+    # (x2, y2) = aff * (left + width, top + height)
     (x3, y3) = aff * (left, top + height)
 
-    width_m = euclidean_distance(x1, x0, y1, y0)
-    height_m = euclidean_distance(x3, x0, y3, y0)
+    width_m = torch.tensor(euclidean_distance(x1, x0, y1, y0)).to(device)
+    height_m = torch.tensor(euclidean_distance(x3, x0, y3, y0)).to(device)
 
     return x0, y0, width_m, height_m
 
 
-def geom2xywh(x, y, w, h, aff):
+def geom2xywh(x, y, w, h, aff, device):
     x0, y0 = ~aff * (x, y)
     x1, y1 = ~aff * (x + w, y)
-    x2, y2 = ~aff * (x + w, y + h)
+    # x2, y2 = ~aff * (x + w, y + h)
     x3, y3 = ~aff * (x, y + h)
 
-    width = euclidean_distance(x1, x0, y1, y0)
-    height = euclidean_distance(x3, x0, y3, y0)
+    width = torch.tensor(euclidean_distance(x1, x0, y1, y0)).to(device)
+    height = torch.tensor(euclidean_distance(x3, x0, y3, y0)).to(device)
 
     return int(x0), int(y0), int(width), int(height)
 
@@ -555,6 +556,7 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
 
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
         box = xywh2xyxy(x[:, :4])
+        # print('[BOX]:\n', box.shape)
 
         # Detections matrix nx6 (xyxy, conf, cls)
         if multi_label:
@@ -606,41 +608,41 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
 
 
 # Malisiewicz et al.
-def non_max_suppression_fast(boxes, overlapThresh):
-    # if there are no boxes, return an empty list
-    if len(boxes) == 0:
-        return []
-    print(f'Length : {len(boxes)}')
-    # initialize the list of picked indexes
-    pick = []
-
-    # grab the coordinates of the bounding boxes
-    x1 = boxes[:, 0]
-    y1 = boxes[:, 1]
-    x2 = boxes[:, 2]
-    y2 = boxes[:, 3]
-
-    # compute the area of the bounding boxes and sort the bounding
-	# boxes by the bottom-right y-coordinate of the bounding box
-    area = (x2 - x1 + 1) * (y2 - y1 + 1)
-    idxs = np.argsort(y2)
-
-    while len(idxs) > 0:
-        last = len(idxs) - 1
-        i = idxs[last]
-        pick.append(i)
-
-        xx1 = np.maximum(x1[i], x1[idxs[:last]])
-        yy1 = np.maximum(y1[i], y1[idxs[:last]])
-        xx2 = np.minimum(x2[i], x2[idxs[:last]])
-        yy2 = np.minimum(y2[i], y2[idxs[:last]])
-		# compute the width and height of the bounding box
-        w = np.maximum(0, xx2 - xx1 + 1)
-        h = np.maximum(0, yy2 - yy1 + 1)
-        # compute the ratio of overlap
-        overlap = (w * h) / area[idxs[:last]]
-		# delete all indexes from the index list that have
-        idxs = np.delete(idxs, np.concatenate(([last], np.where(overlap > overlapThresh)[0])))
+# def non_max_suppression_fast(boxes, overlapThresh):
+#     # if there are no boxes, return an empty list
+#     if len(boxes) == 0:
+#         return []
+#     print(f'Length : {len(boxes)}')
+#     # initialize the list of picked indexes
+#     pick = []
+#
+#     # grab the coordinates of the bounding boxes
+#     x1 = boxes[:, 0]
+#     y1 = boxes[:, 1]
+#     x2 = boxes[:, 2]
+#     y2 = boxes[:, 3]
+#
+#     # compute the area of the bounding boxes and sort the bounding
+# 	# boxes by the bottom-right y-coordinate of the bounding box
+#     area = (x2 - x1 + 1) * (y2 - y1 + 1)
+#     idxs = np.argsort(y2)
+#
+#     while len(idxs) > 0:
+#         last = len(idxs) - 1
+#         i = idxs[last]
+#         pick.append(i)
+#
+#         xx1 = np.maximum(x1[i], x1[idxs[:last]])
+#         yy1 = np.maximum(y1[i], y1[idxs[:last]])
+#         xx2 = np.minimum(x2[i], x2[idxs[:last]])
+#         yy2 = np.minimum(y2[i], y2[idxs[:last]])
+# 		# compute the width and height of the bounding box
+#         w = np.maximum(0, xx2 - xx1 + 1)
+#         h = np.maximum(0, yy2 - yy1 + 1)
+#         # compute the ratio of overlap
+#         overlap = (w * h) / area[idxs[:last]]
+# 		# delete all indexes from the index list that have
+#         idxs = np.delete(idxs, np.concatenate(([last], np.where(overlap > overlapThresh)[0])))
 
     return boxes[pick]
 
@@ -1030,8 +1032,8 @@ def sliding_window(image, windowSize):
             translateoptions = gdal.TranslateOptions(bandList=bnds,
                                                      noData="0",
                                                      srcWin=[x, y,
-                                                             windowSize[1],
-                                                             windowSize[0]])
+                                                             windowSize[0],
+                                                             windowSize[1]])
             tile = os.path.join(str(temp_dir), str(filename) + "_" + str(cidx) + ".tif")
             gdal.Translate(tile, ds, options=translateoptions)
 
