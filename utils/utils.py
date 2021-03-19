@@ -1039,7 +1039,7 @@ def sliding_window(image, windowSize):
 
             # yield the current window
             # yield (tile, x, y, image[y:y + windowSize[0], x:x + windowSize[1]])
-            yield x, y, (temp_dir, tile)
+            yield temp_dir, tile
 
 
 def to_tiles(input_img, output_dir, xsize, ysize):

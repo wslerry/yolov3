@@ -127,7 +127,7 @@ def detect(save_img=False):
     detections = list()
     temp_dir = None
 
-    for (x, y, file0) in sliding_window(source, windowSize=(imgsz, imgsz)):
+    for file0 in sliding_window(source, windowSize=(imgsz, imgsz)):
         (temp_dir, image0) = file0
         # get geographic parameters of input image, return error if failed!
         image_crs, affine_coord, src_meta = geo_params(image0)
@@ -154,60 +154,52 @@ def detect(save_img=False):
         if half:
             pred = pred.float()
 
-        # out put from predection in xywh format
-        # input to NMS as xywh
-        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres,
-                                   multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
-        # Output from NMS will be in xyxy format
-        # convert all prediction boxes to geographical values
-        # get xyxy, confidence, and class from prediction results
-        # convert xyxy to xywh
         for i, det in enumerate(pred):
-            if det is not None and len(det):
-                for *xyxy, conf, cls in det:
-                    """
-                    x1y1                  x1y1    
-                    +------+              +------+
-                    |      |     >>>>     | cxcy |
-                    +------+              +------+
-                            x2y2                  
-                    """
-                    # c1 : top,left while c2 : bottom,right
-                    (c1, c2) = ((xyxy[0], xyxy[1]), (xyxy[2], xyxy[3]))
-                    (left, top) = (c1[0], c1[1])
-                    (width, height) = (c2[0] - left, c2[1] - top)
+            y = torch.zeros_like(det) if isinstance(det, torch.Tensor) else np.zeros_like(det)
+            # (cent_x, cent_y) = (det[0], det[1])
+            # (width, height) = (det[2], det[3])
+            #
+            # left = cent_x - (width / 2)
+            # top = cent_y - (height / 2)
+            (y[:, 0], y[:, 1]) = affine_coord * (det[:, 0], det[:, 2])
+            y[:, 2] = affine_coord * (det[:, 0]-)
 
-                    cx = left + width / 2  # / W0
-                    cy = top + height / 2  # / H0
-                    (geom_cx, geom_cy) = affine_coord * (cx, cy)
-                    points = Point((geom_cx, geom_cy))
-                    points_geom.append([points])
+            print(y)
 
-                    # xywh in geographic form
-                    xywh = xywh2geom(left, top, width, height, affine_coord, device)
+            # (x0, y0) = affine_coord * (left, top)
+            # (x1, y1) = affine_coord * (left + width, top)
+            # (x2, y2) = affine_coord * (left + width, top + height)
+            # (x3, y3) = affine_coord * (left, top + height)
+            #
+            # width_m = torch.sqrt(((x1 - x0) ** 2) + ((y1 - y0) ** 2))
+            # height_m = torch.sqrt(((x3 - x0) ** 2) + ((y3 - y0) ** 2))
+            # print(width_m)
 
-                    # save all boxes params into list with geographical values
-                    preds_list.append([geom_cx, geom_cy, xywh[2], xywh[3]])
+            # preds_list.append([cx, cy, width_m, height_m, det[4], det[5]])
 
-    preds_list = (torch.FloatTensor(preds_list)).cpu().data.numpy()
 
-    xyxy = xywh2xyxy(preds_list)
+    # preds_list = torch.stack(preds_list)
+    # print(preds_list)
+    # # # # preds_list = (torch.FloatTensor(preds_list)).cpu().data.numpy()
+    # predictions = non_max_suppression(preds_list, opt.conf_thres, opt.iou_thres,
+    #                                   multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
+    #
+    # for i, det in enumerate(predictions):
+    #     if det is not None and len(det):
+    #         for *xyxy, conf, cls in det:
+    #             (c1, c2) = ((xyxy[0], xyxy[1]), (xyxy[2], xyxy[3]))
+    #             (left, top) = (c1[0], c1[1])
+    #             (width, height) = (c2[0] - left, c2[1] - top)
+    #
+    #             cx = left + width / 2  # / W0
+    #             cy = top + height / 2  # / H0
+    #             (geom_cx, geom_cy) = source_meta[1] * (cx, cy)
+    #             points = Point((geom_cx, geom_cy))
+    #             points_geom.append([points])
 
-    nms = non_max_suppression_fast(xyxy, 0.6)
-    print("Total object detected : ", len(nms))
-    geoms = load_geographic_data(nms)
-
-    df = gpd.GeoDataFrame(geoms[0], columns=['geometry'])
-    df.crs = source_meta[0]
-    df.to_file(os.path.join(out, 'detection_results.gpkg'), layer='points', driver='GPKG')
-
-    df_bulat = gpd.GeoDataFrame(geoms[1], columns=['geometry'])
-    df_bulat.crs = source_meta[0]
-    df_bulat.to_file(os.path.join(out, 'detection_results.gpkg'), layer='canopy', driver='GPKG')
-
-    df_sq = gpd.GeoDataFrame(geoms[2], columns=['geometry'])
-    df_sq.crs = source_meta[0]
-    df_sq.to_file(os.path.join(out, 'detection_results.gpkg'), layer='square', driver='GPKG')
+    # df = gpd.GeoDataFrame(points_geom, columns=['geometry'])
+    # df.crs = source_meta[0]
+    # df.to_file(os.path.join(out, 'detection_results.gpkg'), layer='points', driver='GPKG')
 
     shutil.rmtree(temp_dir)
     print('Done. (%.3fs)' % (time.time() - t0))
