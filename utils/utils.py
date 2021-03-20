@@ -114,6 +114,18 @@ def xyxy2xywh(x):
     return y
 
 
+def xyxycc2xywhcc(x):
+    # Transform box coordinates from [x1, y1, x2, y2] (where xy1=top-left, xy2=bottom-right) to [x, y, w, h]
+    y = torch.zeros_like(x) if isinstance(x, torch.Tensor) else np.zeros_like(x)
+    y[:, 0] = (x[:, 0] + x[:, 2]) / 2  # x center
+    y[:, 1] = (x[:, 1] + x[:, 3]) / 2  # y center
+    y[:, 2] = x[:, 2] - x[:, 0]  # width
+    y[:, 3] = x[:, 3] - x[:, 1]  # height
+    y[:, 4] = x[:, 4]   # confidence
+    y[:, 5] = x[:, 5]   # class
+    return y
+
+
 def xywh2xyxy(x):
     # Transform box coordinates from [x, y, w, h] to [x1, y1, x2, y2] (where xy1=top-left, xy2=bottom-right)
     y = torch.zeros_like(x) if isinstance(x, torch.Tensor) else np.zeros_like(x)
@@ -121,6 +133,18 @@ def xywh2xyxy(x):
     y[:, 1] = x[:, 1] - x[:, 3] / 2  # top left y
     y[:, 2] = x[:, 0] + x[:, 2] / 2  # bottom right x
     y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
+    return y
+
+
+def xywhcc2xyxycc(x):
+    # Transform box coordinates from [x, y, w, h] to [x1, y1, x2, y2] (where xy1=top-left, xy2=bottom-right)
+    y = torch.zeros_like(x) if isinstance(x, torch.Tensor) else np.zeros_like(x)
+    y[:, 0] = x[:, 0] - x[:, 2] / 2  # top left x
+    y[:, 1] = x[:, 1] - x[:, 3] / 2  # top left y
+    y[:, 2] = x[:, 0] + x[:, 2] / 2  # bottom right x
+    y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
+    y[:, 4] = x[:, 4]   # confidence
+    y[:, 5] = x[:, 5]   # class
     return y
 
 
@@ -533,7 +557,7 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
         nx6 (x1, y1, x2, y2, conf, cls)
     """
     # Box constraints
-    min_wh, max_wh = 2, 4096  # (pixels) minimum and maximum box width and height
+    min_wh, max_wh = 10, 32  #2, 4096  # (pixels) minimum and maximum box width and height
 
     method = 'merge'
     nc = prediction[0].shape[1] - 5  # number of classes
@@ -605,47 +629,6 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
         output[xi] = x[i]
 
     return output
-
-
-# Malisiewicz et al.
-# def non_max_suppression_fast(boxes, overlapThresh):
-#     # if there are no boxes, return an empty list
-#     if len(boxes) == 0:
-#         return []
-#     print(f'Length : {len(boxes)}')
-#     # initialize the list of picked indexes
-#     pick = []
-#
-#     # grab the coordinates of the bounding boxes
-#     x1 = boxes[:, 0]
-#     y1 = boxes[:, 1]
-#     x2 = boxes[:, 2]
-#     y2 = boxes[:, 3]
-#
-#     # compute the area of the bounding boxes and sort the bounding
-# 	# boxes by the bottom-right y-coordinate of the bounding box
-#     area = (x2 - x1 + 1) * (y2 - y1 + 1)
-#     idxs = np.argsort(y2)
-#
-#     while len(idxs) > 0:
-#         last = len(idxs) - 1
-#         i = idxs[last]
-#         pick.append(i)
-#
-#         xx1 = np.maximum(x1[i], x1[idxs[:last]])
-#         yy1 = np.maximum(y1[i], y1[idxs[:last]])
-#         xx2 = np.minimum(x2[i], x2[idxs[:last]])
-#         yy2 = np.minimum(y2[i], y2[idxs[:last]])
-# 		# compute the width and height of the bounding box
-#         w = np.maximum(0, xx2 - xx1 + 1)
-#         h = np.maximum(0, yy2 - yy1 + 1)
-#         # compute the ratio of overlap
-#         overlap = (w * h) / area[idxs[:last]]
-# 		# delete all indexes from the index list that have
-#         idxs = np.delete(idxs, np.concatenate(([last], np.where(overlap > overlapThresh)[0])))
-
-    return boxes[pick]
-
 
 def get_yolo_layers(model):
     bool_vec = [x['type'] == 'yolo' for x in model.module_defs]
@@ -1004,6 +987,7 @@ def sliding_window(image, windowSize):
     band = ds.GetRasterBand(1)
     x_size = band.XSize
     y_size = band.YSize
+
     band_list = ds.RasterCount
     bnds = list()
     bnds_idx = 1

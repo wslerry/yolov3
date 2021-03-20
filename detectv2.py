@@ -35,22 +35,37 @@ def non_max_suppression_fast(boxes, iou_threshold):
         # delete all indexes from the index list that have
         idxs = np.delete(idxs, np.concatenate(([last],
                                                np.where(overlap > iou_threshold)[0])))
-    new_boxes = xyxy2xywh(boxes[pick])
+    new_boxes = xyxycc2xywhcc(boxes[pick])
     return new_boxes
 
+    # boxes = boxes[pick]
+    # y = torch.zeros_like(boxes) if isinstance(boxes, torch.Tensor) else np.zeros_like(boxes)
+    # y[:, 0] = boxes[:, 0]
+    # y[:, 1] = boxes[:, 1]
+    # y[:, 2] = boxes[:, 2]
+    # y[:, 3] = boxes[:, 3]
+    # y[:, 4] = boxes[:, 4]
+    # y[:, 5] = boxes[:, 5]
 
-def load_geographic_data(x):
-    # input will be xyxy, generated from non_max_suppression_fast()
+    # y = xyxy2xywh(boxes[pick])
+    # return boxes[pick]
+
+
+def load_geographic_data(x, names):
+    # input will be xywhcc, generated from non_max_suppression_fast()
     xy_points = list()
     squares = list()
     circles = list()
+    confidences = list()
+    class_name = list()
+
     for idxs in x:
         (cent_x, cent_y) = (idxs[0], idxs[1])
         (width, height) = (idxs[2], idxs[3])
         left = cent_x - (width / 2)
         top = cent_y - (height / 2)
         try:
-            rad = (width / 2) + (height ** 2 / (8 * width))
+            rad = ((width / 2) + (height ** 2 / (8 * width))) * 0.8
         except ZeroDivisionError:
             rad = 0
 
@@ -60,19 +75,21 @@ def load_geographic_data(x):
         (x2, y2) = (left + width, top + height)
         (x3, y3) = (left, top + height)
         square = Polygon(((x0, y0), (x1, y1), (x2, y2), (x3, y3)))
+        squares.append([names[int(idxs[5])], idxs[4], square])
 
-        theta = np.linspace(0, 2 * np.pi, 8)
+        theta = np.linspace(0, 2 * np.pi, 16)
         x, y = rad * np.cos(theta) + cent_x, rad * np.sin(theta) + cent_y
         # build the list of points of circular geometry
         ext = list()
         for i_theta in range(len(theta)):
             ext.append((x[i_theta], y[i_theta]))
+
         # create center-point of boxes
         pts = Point((cent_x, cent_y))
-        xy_points.append([pts])
+        xy_points.append([names[int(idxs[5])], idxs[4], pts])
+
         bulat = Polygon(ext)
-        circles.append([bulat])
-        squares.append([square])
+        circles.append([names[int(idxs[5])], idxs[4], rad, bulat])
 
     return xy_points, circles, squares
 
@@ -84,9 +101,21 @@ def detect(save_img=False):
 
     # Initialize
     device = torch_utils.select_device(device='cpu' if ONNX_EXPORT else opt.device)
+
+    for root, dirs, files in os.walk('/path/to/folder'):
+        for f in files:
+            os.unlink(os.path.join(root, f))
+        for d in dirs:
+            shutil.rmtree(os.path.join(root, d))
+
     if os.path.exists(out):
-        shutil.rmtree(out)  # delete output folder
-    os.makedirs(out)  # make new output folder
+        for root, dirs, files in os.walk(out):
+            for f in files:
+                os.unlink(os.path.join(root, f))
+            for d in dirs:
+                shutil.rmtree(os.path.join(root, d))
+    else:
+        os.makedirs(out)  # make new output folder
 
     # Initialize model
     model = Darknet(opt.cfg, imgsz)
@@ -127,7 +156,7 @@ def detect(save_img=False):
     detections = list()
     temp_dir = None
 
-    for (x, y, file0) in sliding_window(source, windowSize=(imgsz, imgsz)):
+    for file0 in sliding_window(source, windowSize=(imgsz, imgsz)):
         (temp_dir, image0) = file0
         # get geographic parameters of input image, return error if failed!
         image_crs, affine_coord, src_meta = geo_params(image0)
@@ -172,40 +201,60 @@ def detect(save_img=False):
                     +------+              +------+
                             x2y2                  
                     """
-                    # c1 : top,left while c2 : bottom,right
-                    (c1, c2) = ((xyxy[0], xyxy[1]), (xyxy[2], xyxy[3]))
-                    (left, top) = (c1[0], c1[1])
-                    (width, height) = (c2[0] - left, c2[1] - top)
+                    # (c1, c2) = ((xyxy[0], xyxy[1]), (xyxy[2], xyxy[3]))
+                    # (left, top) = (c1[0], c1[1])
+                    # (width, height) = (c2[0] - left, c2[1] - top)
+                    #
+                    # cx = left + width / 2  # / W0
+                    # cy = top + height / 2  # / H0
+                    # (geom_cx, geom_cy) = affine_coord * (cx, cy)
+                    #
+                    # # xywh in geographic form
+                    # xywh = xywh2geom(left, top, width, height, affine_coord, device)
+                    #
+                    # # save all boxes params into list with geographical values
+                    # preds_list.append([geom_cx, geom_cy, xywh[2], xywh[3], conf, cls])
 
-                    cx = left + width / 2  # / W0
-                    cy = top + height / 2  # / H0
-                    (geom_cx, geom_cy) = affine_coord * (cx, cy)
-                    points = Point((geom_cx, geom_cy))
-                    points_geom.append([points])
 
-                    # xywh in geographic form
+                    (left, top) = (xyxy[0], xyxy[1])
+                    (right, bottom) = (xyxy[2], xyxy[3])
+                    cx = (xyxy[0] + xyxy[2]) / 2  # x center
+                    cy = (xyxy[1] + xyxy[3]) / 2  # y center
+                    width = xyxy[2] - xyxy[0]  # width
+                    height = xyxy[3] - xyxy[1]  # height
+
+                    # (x1_geom, y1_geom) = affine_coord * (left, top)
+                    # (x2_geom, y2_geom) = affine_coord * (right, bottom)
+                    (cx_geom, cy_geom) = affine_coord * (cx, cy)
+
                     xywh = xywh2geom(left, top, width, height, affine_coord, device)
 
                     # save all boxes params into list with geographical values
-                    preds_list.append([geom_cx, geom_cy, xywh[2], xywh[3]])
+                    preds_list.append([cx_geom, cy_geom, xywh[2], xywh[3], conf, cls])  # cx,cy,w,h,conf,cls
+                    # print(preds_list)
 
     preds_list = (torch.FloatTensor(preds_list)).cpu().data.numpy()
 
-    xyxy = xywh2xyxy(preds_list)
+    print("Total object before NMS : ", len(preds_list))
 
-    nms = non_max_suppression_fast(xyxy, 0.6)
+    xyxy = xywhcc2xyxycc(preds_list)
+
+    # Apply 2nd non maximum suppresion algorithm
+    nms = non_max_suppression_fast(xyxy, 0.5)
+
     print("Total object detected : ", len(nms))
-    geoms = load_geographic_data(nms)
 
-    df = gpd.GeoDataFrame(geoms[0], columns=['geometry'])
+    geoms = load_geographic_data(nms, names)
+
+    df = gpd.GeoDataFrame(geoms[0], columns=['class', 'confidence', 'geometry'])
     df.crs = source_meta[0]
     df.to_file(os.path.join(out, 'detection_results.gpkg'), layer='points', driver='GPKG')
 
-    df_bulat = gpd.GeoDataFrame(geoms[1], columns=['geometry'])
+    df_bulat = gpd.GeoDataFrame(geoms[1], columns=['class', 'confidence', 'radius', 'geometry'])
     df_bulat.crs = source_meta[0]
     df_bulat.to_file(os.path.join(out, 'detection_results.gpkg'), layer='canopy', driver='GPKG')
 
-    df_sq = gpd.GeoDataFrame(geoms[2], columns=['geometry'])
+    df_sq = gpd.GeoDataFrame(geoms[2], columns=['class', 'confidence', 'geometry'])
     df_sq.crs = source_meta[0]
     df_sq.to_file(os.path.join(out, 'detection_results.gpkg'), layer='square', driver='GPKG')
 

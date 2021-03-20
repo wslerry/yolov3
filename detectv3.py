@@ -122,6 +122,7 @@ def detect(save_img=False):
     _ = model(image0.half() if half else image0.float()) if device.type != 'cpu' else None  # run once
 
     preds_list = list()
+    preds_list0 = list()
     preds_conf = list()
     points_geom = list()
     detections = list()
@@ -154,36 +155,77 @@ def detect(save_img=False):
         if half:
             pred = pred.float()
 
-        for i, det in enumerate(pred):
-            y = torch.zeros_like(det) if isinstance(det, torch.Tensor) else np.zeros_like(det)
-            # (cent_x, cent_y) = (det[0], det[1])
-            # (width, height) = (det[2], det[3])
-            #
-            # left = cent_x - (width / 2)
-            # top = cent_y - (height / 2)
-            (y[:, 0], y[:, 1]) = affine_coord * (det[:, 0], det[:, 2])
-            y[:, 2] = affine_coord * (det[:, 0]-)
+        # print('pred:', pred.shape)
+        # print(pred)
+        # preds_list0.append(pred)
+        pred_xywh = pred
 
-            print(y)
+        pred0 = non_max_suppression(pred, opt.conf_thres, opt.iou_thres,
+                                   multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
+        # print('pred after nms0:\n', pred0, '\n')
+        # boxes = [None] * len(pred)
+        # for i, pred in enumerate(pred):
+        #     xyxy = xywh2xyxy(pred[:, :4])
+        #     y0 = torch.zeros_like(xyxy) if isinstance(xyxy, torch.Tensor) else np.zeros_like(xyxy)
+        #     (y0[:, 0], y0[:, 1]) = affine_coord * (xyxy[:, 0], xyxy[:, 1])
+        #     (y0[:, 2], y0[:, 3]) = affine_coord * (xyxy[:, 2], xyxy[:, 3])
+        #     y1 = torch.zeros_like(pred) if isinstance(pred, torch.Tensor) else np.zeros_like(pred)
+        #     (y1[:, 0], y1[:, 1]) = affine_coord * (pred[:, 0], pred[:, 1])
+        #     y1[:, 2] = y0[:, 2] - y0[:, 0]
+        #     y1[:, 3] = y0[:, 1] - y0[:, 3]
+        #     y1[:, 4] = pred[:, 4]
+        #     y1[:, 5] = pred[:, 5]
+        #     boxes[i] = y1
+        #     y1 = torch.cat((y1[:, :4], pred[:, 4].unsqueeze(1), pred[:, 5].float().unsqueeze(1)), 1)
 
-            # (x0, y0) = affine_coord * (left, top)
-            # (x1, y1) = affine_coord * (left + width, top)
-            # (x2, y2) = affine_coord * (left + width, top + height)
-            # (x3, y3) = affine_coord * (left, top + height)
-            #
-            # width_m = torch.sqrt(((x1 - x0) ** 2) + ((y1 - y0) ** 2))
-            # height_m = torch.sqrt(((x3 - x0) ** 2) + ((y3 - y0) ** 2))
-            # print(width_m)
+        xyxy = xywh2xyxy(pred_xywh[:, :4])
+        # y0 = torch.zeros_like(xyxy) if isinstance(xyxy, torch.Tensor) else np.zeros_like(xyxy)
+        # (y0[:, 0], y0[:, 1]) = affine_coord * (xyxy[:, 0], xyxy[:, 1])
+        # (y0[:, 2], y0[:, 3]) = affine_coord * (xyxy[:, 2], xyxy[:, 3])
+        (xyxy[:, 0], xyxy[:, 1]) = affine_coord * (xyxy[:, 0], xyxy[:, 1])
+        (xyxy[:, 2], xyxy[:, 3]) = affine_coord * (xyxy[:, 2], xyxy[:, 3])
 
-            # preds_list.append([cx, cy, width_m, height_m, det[4], det[5]])
+        # y1 = torch.zeros_like(pred) if isinstance(pred, torch.Tensor) else np.zeros_like(pred)
+        # (y1[:, 0], y1[:, 1]) = affine_coord * (pred[:, 0], pred[:, 1])
+        # y1[:, 2] = y0[:, 2] - y0[:, 0]
+        # y1[:, 3] = y0[:, 1] - y0[:, 3]
+        # y1[:, 4] = pred[:, 4]
+        # y1[:, 5] = pred[:, 5]
+        (pred_xywh[:, 0], pred_xywh[:, 1]) = affine_coord * (pred_xywh[:, 0], pred_xywh[:, 1])
+        pred_xywh[:, 2] = xyxy[:, 2] - xyxy[:, 0]
+        pred_xywh[:, 3] = xyxy[:, 1] - xyxy[:, 3]
+        pred_xywh[:, 4] = pred[:, 4]
+        pred_xywh[:, 5] = pred[:, 5]
+        # print('another pred', pred_xywh.shape)
+        # print(pred_xywh)
+        # y1 = torch.cat((pred_xywh[:, :4], pred[:, 4].unsqueeze(1), pred[:, 5].float().unsqueeze(1)), 1)
+        print("-------------------------------------------------------------------------------")
+        pred1 = non_max_suppression(pred_xywh, opt.conf_thres, opt.iou_thres,
+                                    multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
+        for i, det in enumerate(pred1):
+            if det is not None and len(det):
+                for *xyxy, conf, cls in det:
+                    (c1, c2) = ((xyxy[0], xyxy[1]), (xyxy[2], xyxy[3]))
+                    (left, top) = (c1[0], c1[1])
+                    (width, height) = (c2[0] - left, c2[1] - top)
 
+                    cx = left + width / 2
+                    cy = top + height / 2
+                    (geom_cx, geom_cy) = affine_coord * (cx, cy)
+                    points = Point((geom_cx, geom_cy))
+                    print(points)
+                    points_geom.append([points])
 
-    # preds_list = torch.stack(preds_list)
+    # preds_list0 = torch.cat(preds_list0, 1)
+    # print(preds_list0)
+    # print('----\n')
+    # preds_list = torch.cat(preds_list, 1)
     # print(preds_list)
-    # # # # preds_list = (torch.FloatTensor(preds_list)).cpu().data.numpy()
-    # predictions = non_max_suppression(preds_list, opt.conf_thres, opt.iou_thres,
+    # predictions = non_max_suppression(preds_list0, opt.conf_thres, opt.iou_thres,
     #                                   multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
-    #
+    # print('****\n')
+    # print(predictions)
+
     # for i, det in enumerate(predictions):
     #     if det is not None and len(det):
     #         for *xyxy, conf, cls in det:
@@ -191,15 +233,14 @@ def detect(save_img=False):
     #             (left, top) = (c1[0], c1[1])
     #             (width, height) = (c2[0] - left, c2[1] - top)
     #
-    #             cx = left + width / 2  # / W0
-    #             cy = top + height / 2  # / H0
-    #             (geom_cx, geom_cy) = source_meta[1] * (cx, cy)
-    #             points = Point((geom_cx, geom_cy))
+    #             cx = left + width / 2
+    #             cy = top + height / 2
+    #             points = Point((cx, cy))
     #             points_geom.append([points])
-
-    # df = gpd.GeoDataFrame(points_geom, columns=['geometry'])
-    # df.crs = source_meta[0]
-    # df.to_file(os.path.join(out, 'detection_results.gpkg'), layer='points', driver='GPKG')
+    #
+    df = gpd.GeoDataFrame(points_geom, columns=['geometry'])
+    df.crs = source_meta[0]
+    df.to_file(os.path.join(out, 'detection_results.gpkg'), layer='points', driver='GPKG')
 
     shutil.rmtree(temp_dir)
     print('Done. (%.3fs)' % (time.time() - t0))
