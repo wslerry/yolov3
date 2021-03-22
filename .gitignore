@@ -245,7 +245,9 @@ fabric.properties
 tutorial.ipynb
 Acacia_detection.ipynb
 output
+output*
 *.html
 # worldview.ipynb
 worldview_pansharp.ipynb
 *.bat
+*.gpkg

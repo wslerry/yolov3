@@ -8,15 +8,23 @@ import cv2
 import geopandas as gpd
 
 
-def non_max_suppression_fast(boxes, iou_threshold):
+def non_max_suppression_fast(boxes, iou_threshold, ratio):
     if len(boxes) == 0:
         return []
     pick = []
+
+    if ratio:
+        width = boxes[:, 2] - boxes[:, 0]  # width
+        height = boxes[:, 3] - boxes[:, 1]  # height
+        ratio = (width/height > 0.4) & (width/height < 1.56)
+        boxes = boxes[ratio]
+
     # grab the coordinates of the bounding boxes
     x1 = boxes[:, 0]
     y1 = boxes[:, 1]
     x2 = boxes[:, 2]
     y2 = boxes[:, 3]
+
     area = (x2 - x1 + 1) * (y2 - y1 + 1)
     idxs = np.argsort(y2)
     while len(idxs) > 0:
@@ -37,18 +45,6 @@ def non_max_suppression_fast(boxes, iou_threshold):
                                                np.where(overlap > iou_threshold)[0])))
     new_boxes = xyxycc2xywhcc(boxes[pick])
     return new_boxes
-
-    # boxes = boxes[pick]
-    # y = torch.zeros_like(boxes) if isinstance(boxes, torch.Tensor) else np.zeros_like(boxes)
-    # y[:, 0] = boxes[:, 0]
-    # y[:, 1] = boxes[:, 1]
-    # y[:, 2] = boxes[:, 2]
-    # y[:, 3] = boxes[:, 3]
-    # y[:, 4] = boxes[:, 4]
-    # y[:, 5] = boxes[:, 5]
-
-    # y = xyxy2xywh(boxes[pick])
-    # return boxes[pick]
 
 
 def load_geographic_data(x, names):
@@ -201,21 +197,6 @@ def detect(save_img=False):
                     +------+              +------+
                             x2y2                  
                     """
-                    # (c1, c2) = ((xyxy[0], xyxy[1]), (xyxy[2], xyxy[3]))
-                    # (left, top) = (c1[0], c1[1])
-                    # (width, height) = (c2[0] - left, c2[1] - top)
-                    #
-                    # cx = left + width / 2  # / W0
-                    # cy = top + height / 2  # / H0
-                    # (geom_cx, geom_cy) = affine_coord * (cx, cy)
-                    #
-                    # # xywh in geographic form
-                    # xywh = xywh2geom(left, top, width, height, affine_coord, device)
-                    #
-                    # # save all boxes params into list with geographical values
-                    # preds_list.append([geom_cx, geom_cy, xywh[2], xywh[3], conf, cls])
-
-
                     (left, top) = (xyxy[0], xyxy[1])
                     (right, bottom) = (xyxy[2], xyxy[3])
                     cx = (xyxy[0] + xyxy[2]) / 2  # x center
@@ -240,7 +221,7 @@ def detect(save_img=False):
     xyxy = xywhcc2xyxycc(preds_list)
 
     # Apply 2nd non maximum suppresion algorithm
-    nms = non_max_suppression_fast(xyxy, 0.5)
+    nms = non_max_suppression_fast(xyxy, 0.5, opt.ratio)
 
     print("Total object detected : ", len(nms))
 
@@ -280,6 +261,7 @@ if __name__ == '__main__':
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
+    parser.add_argument('--ratio', action='store_true', help='box width / height ratio')
     opt = parser.parse_args()
     print(opt)
 
