@@ -126,8 +126,7 @@ def detect(save_img=False):
 
     # read main image
     source_meta = geo_params(source)
-
-    # image = cv2.imread(source)
+    image = cv2.imread(source) #BGR
 
     # Eval mode
     model.to(device).eval()
@@ -227,6 +226,37 @@ def detect(save_img=False):
 
     geoms = load_geographic_data(nms, names)
 
+    for idxs in nms:
+        left = idxs[0] - idxs[2] / 2  # top left x
+        top = idxs[1] - idxs[3] / 2  # top left y
+        right = idxs[0] + idxs[2] / 2  # bottom right x
+        bottom = idxs[1] + idxs[3] / 2  # bottom right y
+        (width, height) = (idxs[3], idxs[4])
+        cent_x = left + (width / 2)
+        cent_y = top + (height / 2)
+
+        (cent_x, cent_y) = ~source_meta[1] * (cent_x, cent_y)
+        (left, top) = ~source_meta[1] * (left, top)
+        (right, bottom) = ~source_meta[1] * (right, bottom)
+
+        (width, height) = (right - left, bottom - top)
+
+        try:
+            rad = (width / 2) + (height ** 2 / (8 * width))
+        except ZeroDivisionError:
+            rad = 0
+
+        # print(int(left), int(top), int(right), int(bottom))
+        # cv2.rectangle(image, (left, top), (right, bottom), (155, 255, 0), 2)
+        cv2.circle(image, (int(cent_x), int(cent_y)), int(rad), (155, 255, 0), 2)
+
+    image = image[:, :, ::-1].transpose(2, 0, 1)
+
+    if opt.save_img:
+        filename = os.path.splitext(os.path.basename(source))[0]
+        with rio.open(os.path.join(out, filename+".tif"), 'w', **source_meta[2]) as dst:
+            dst.write(image, [1, 2, 3])
+
     df = gpd.GeoDataFrame(geoms[0], columns=['class', 'confidence', 'geometry'])
     df.crs = source_meta[0]
     df.to_file(os.path.join(out, 'detection_results.gpkg'), layer='points', driver='GPKG')
@@ -238,6 +268,8 @@ def detect(save_img=False):
     df_sq = gpd.GeoDataFrame(geoms[2], columns=['class', 'confidence', 'geometry'])
     df_sq.crs = source_meta[0]
     df_sq.to_file(os.path.join(out, 'detection_results.gpkg'), layer='square', driver='GPKG')
+
+
 
     shutil.rmtree(temp_dir)
     print('Done. (%.3fs)' % (time.time() - t0))
@@ -257,6 +289,7 @@ if __name__ == '__main__':
     parser.add_argument('--half', action='store_true', help='half precision FP16 inference')
     parser.add_argument('--device', default='', help='device id (i.e. 0 or 0,1) or cpu')
     parser.add_argument('--view-img', action='store_true', help='display results')
+    parser.add_argument('--save-img', action='store_true', help='Save image of detected object')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
