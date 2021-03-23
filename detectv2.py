@@ -87,13 +87,13 @@ def load_geographic_data(x, names):
         bulat = Polygon(ext)
         circles.append([names[int(idxs[5])], idxs[4], rad, bulat])
 
-    return xy_points, circles, squares
+    return xy_points, circles, squares,
 
 
 def detect(save_img=False):
-    imgsz = (320, 192) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
+    imgsz = opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
     out, source, weights, half, view_img, save_txt = opt.output, opt.source, opt.weights, opt.half, opt.view_img, opt.save_txt
-    webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
+    # webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
 
     # Initialize
     device = torch_utils.select_device(device='cpu' if ONNX_EXPORT else opt.device)
@@ -146,9 +146,6 @@ def detect(save_img=False):
     _ = model(image0.half() if half else image0.float()) if device.type != 'cpu' else None  # run once
 
     preds_list = list()
-    preds_conf = list()
-    points_geom = list()
-    detections = list()
     temp_dir = None
 
     for file0 in sliding_window(source, windowSize=(imgsz, imgsz)):
@@ -227,13 +224,13 @@ def detect(save_img=False):
     geoms = load_geographic_data(nms, names)
 
     for idxs in nms:
+        (cent_x, cent_y) = (idxs[0], idxs[1])
+        # (width, height) = (idxs[2], idxs[3])
+
         left = idxs[0] - idxs[2] / 2  # top left x
         top = idxs[1] - idxs[3] / 2  # top left y
         right = idxs[0] + idxs[2] / 2  # bottom right x
         bottom = idxs[1] + idxs[3] / 2  # bottom right y
-        (width, height) = (idxs[3], idxs[4])
-        cent_x = left + (width / 2)
-        cent_y = top + (height / 2)
 
         (cent_x, cent_y) = ~source_meta[1] * (cent_x, cent_y)
         (left, top) = ~source_meta[1] * (left, top)
@@ -248,13 +245,13 @@ def detect(save_img=False):
 
         # print(int(left), int(top), int(right), int(bottom))
         # cv2.rectangle(image, (left, top), (right, bottom), (155, 255, 0), 2)
-        cv2.circle(image, (int(cent_x), int(cent_y)), int(rad), (155, 255, 0), 2)
-
-    image = image[:, :, ::-1].transpose(2, 0, 1)
+        cv2.circle(image, (int(cent_x), int(cent_y)), int(rad), colors[int(idxs[5])], 2)
 
     if opt.save_img:
-        filename = os.path.splitext(os.path.basename(source))[0]
-        with rio.open(os.path.join(out, filename+".tif"), 'w', **source_meta[2]) as dst:
+        image = image[:, :, ::-1].transpose(2, 0, 1)
+        # filename = os.path.splitext(os.path.basename(source))[0]
+        filename = os.path.basename(source)
+        with rio.open(os.path.join(out, filename), 'w', **source_meta[2]) as dst:
             dst.write(image, [1, 2, 3])
 
     df = gpd.GeoDataFrame(geoms[0], columns=['class', 'confidence', 'geometry'])
@@ -285,7 +282,6 @@ if __name__ == '__main__':
     parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.3, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='IOU threshold for NMS')
-    parser.add_argument('--fourcc', type=str, default='mp4v', help='output video codec (verify ffmpeg support)')
     parser.add_argument('--half', action='store_true', help='half precision FP16 inference')
     parser.add_argument('--device', default='', help='device id (i.e. 0 or 0,1) or cpu')
     parser.add_argument('--view-img', action='store_true', help='display results')
