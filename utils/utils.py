@@ -570,6 +570,10 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
 
         # Apply width-height constraint
         x = x[((x[:, 2:4] > min_wh) & (x[:, 2:4] < max_wh)).all(1)]
+        width = x[:, 2]
+        height = x[:, 3]
+        ratio = (width/height > 0.95) & (width/height < 1.05)
+        x = x[ratio]
 
         # If none remain process next image
         if not x.shape[0]:

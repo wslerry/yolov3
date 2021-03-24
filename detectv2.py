@@ -98,12 +98,6 @@ def detect(save_img=False):
     # Initialize
     device = torch_utils.select_device(device='cpu' if ONNX_EXPORT else opt.device)
 
-    for root, dirs, files in os.walk('/path/to/folder'):
-        for f in files:
-            os.unlink(os.path.join(root, f))
-        for d in dirs:
-            shutil.rmtree(os.path.join(root, d))
-
     if os.path.exists(out):
         for root, dirs, files in os.walk(out):
             for f in files:

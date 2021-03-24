@@ -15,6 +15,7 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 
 from utils.utils import xyxy2xywh, xywh2xyxy
+from sklearn.model_selection import train_test_split
 
 help_url = 'https://github.com/ultralytics/yolov3/wiki/Train-Custom-Data'
 img_formats = ['.bmp', '.jpg', '.jpeg', '.png', '.tif', '.dng']
@@ -861,3 +862,38 @@ def create_folder(path='./new_folder'):
     if os.path.exists(path):
         shutil.rmtree(path)  # delete output folder
     os.makedirs(path)  # make new output folder
+
+
+def train_test_txt(imagedirs, train_txt='./train.txt', test_txt='./test.txt', train_size=0.75):
+    """
+    INSTRUCTIONS:
+
+    imagedirs: Directory to images files, will read file in sub-folder too
+    train_txt: Save train dataset to directory
+    train_txt: Save test dataset to directory
+    train_size: Split data size
+    """
+    if os.path.exists(imagedirs):
+        pass
+    else:
+        raise Exception('Not a valid directory')
+
+    valid_images = [".jpg", ".png", ".tif"]
+    data_list = []
+    for root, directories, files in os.walk(imagedirs, topdown=False):
+        for f in files:
+            title, ext = os.path.splitext(os.path.basename(f))
+            if ext.lower() in valid_images:
+                data_list.append(os.path.join(root, f))
+            else:
+                pass
+
+    train, test = train_test_split(data_list, train_size=train_size)
+
+    with open(train_txt, 'w') as filehandle:
+        for x in train:
+            filehandle.write('%s\n' % x)
+
+    with open(test_txt, 'w') as filehandle:
+        for x in test:
+            filehandle.write('%s\n' % x)

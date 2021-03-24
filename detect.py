@@ -4,7 +4,6 @@ from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
 import rasterio as rio
-from PIL import Image
 import pandas as pd
 # import geopandas as gpd
 #from shapely.geometry import Point, Polygon
@@ -58,28 +57,17 @@ def detect(save_img=False):
             # Get geographic data from image using rasterio
             with rio.open(source) as src:
                 src_meta = src.profile
-                _img_size_w = int(src_meta['width'] / 32) * 32
-                _img_size_h = int(src_meta['height'] / 32) * 32
-                max_dimension = 1024
-            if _img_size_w > max_dimension:
-                # then create tiles images
-                print("check1")
-                to_tiles(source, temp_path, max_dimension, max_dimension)
-            elif _img_size_h > max_dimension:
-                print("check2")
-                to_tiles(source, temp_path, max_dimension, max_dimension)
-            else:
-                if _img_size_w < _img_size_h:
-                    print("check3")
-                    img_size = _img_size_w
-                elif _img_size_w > _img_size_h:
-                    print("check4")
-                    img_size = _img_size_h
-                elif _img_size_w == _img_size_h:
-                    print("check5")
-                    img_size = _img_size_w
-    else:
-        pass
+                img_size = int(src_meta['width']/64) * 64
+                if img_size > 1024:
+                    print("Image is bigger then 1024px, image will be tiled!")
+                    # new image size setting.
+                    img_size = 1024
+                    # then create tiles images
+                    to_tiles(opt.source, temp_path, img_size, img_size)
+                else:
+                    img_size = img_size
+        else:
+            pass
 
     # Initialize model
     model = Darknet(opt.cfg, img_size)
@@ -132,20 +120,13 @@ def detect(save_img=False):
         dataset = LoadStreams(source, img_size=img_size)
     else:
         save_img = True
-        torch.backends.cudnn.benchmark = True
         if opt.geo:
             if img_size == 1024:
-                print("OPT1 : get image from temporary folder")
-                if not os.listdir(temp_path):
-                    dataset = LoadImages(source, img_size=int(img_size*1.5))
-                else:
-                    dataset = LoadImages(temp_path, img_size=int(img_size*1.5))
-            elif img_size < 1024:
-                print("OPT2")
-                dataset = LoadImages(source, img_size=img_size*2)
+                dataset = LoadImages(temp_path, img_size=img_size)
+            else:
+                dataset = LoadImages(source, img_size=img_size)
         else:
-            print("OPT3")
-            dataset = LoadImages(source, img_size=img_size*2)
+            dataset = LoadImages(source, img_size=img_size)
 
     # Get names and colors
     names = load_classes(opt.names)
@@ -158,7 +139,6 @@ def detect(save_img=False):
     total_predicted_box = list()
     class_list = list()  # will be save into classes.txt
     for path, img, im0s, vid_cap in dataset:
-        print('\n', path, img.shape, im0s.shape, end=' ')
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
@@ -177,7 +157,14 @@ def detect(save_img=False):
                         src_imgwidth = src.profile['width']
                         src_imgheight = src.profile['height']
                 except:
-                    raise IOError("Image not a geospatial data!")
+                    raise ValueError("Image not a geospatial data!")
+                # image_crs = src.crs
+                # id_crs = str(image_crs).split(":")
+                # id_crs = int(id_crs[1])
+                # affine = src.transform
+                # src_meta = src.profile
+                # src_imgwidth = src.profile['width']
+                # src_imgheight = src.profile['height']
         else:
             input_img = cv2.imread(path)
             src_imgwidth, src_imgheight = input_img.shape[0], input_img.shape[1]
@@ -357,7 +344,7 @@ def detect(save_img=False):
                         poly.AddGeometry(ring)
 
                         outFeature_canopy.SetField("class", names[int(cls)])
-                        outFeature_canopy.SetField("confidence", round(float(conf), 2))
+                        outFeature_canopy.SetField("confidence", float(conf))
                         outFeature_canopy.SetField("radius_m", round(radius, 2))
 
                         # Set new geometry
@@ -425,7 +412,6 @@ def detect(save_img=False):
                 # df_circle = gpd.GeoDataFrame(circle_, columns=['labels', 'confidence', 'radius', 'geometry'])
                 # df_circle.crs = image_crs
                 # df_circle.to_file(save_path + '_circle.geojson', driver='GeoJSON')
-
     if save_label:
         df = pd.DataFrame(class_list, columns=['classes'])
         group_data = df.groupby(df['classes'], sort=False)
@@ -438,9 +424,8 @@ def detect(save_img=False):
         if platform == 'darwin':  # MacOS
             os.system('open ' + save_path)
 
-    # if opt.geo:
-    #     shutil.rmtree(temp_path, ignore_errors=True)
-    shutil.rmtree(temp_path, ignore_errors=True)
+    if opt.geo:
+        shutil.rmtree(temp_path)
     # print(f'Total predicted {names[int(c)]} : {sum(total_predicted_box)} ')
     print('Done. (%.3fs)' % (time.time() - t0))
 
@@ -452,9 +437,9 @@ if __name__ == '__main__':
     parser.add_argument('--weights', type=str, default='weights/yolov3-spp-ultralytics.pt', help='weights path')
     parser.add_argument('--source', type=str, default='data/samples', help='source')  # input file/folder, 0 for webcam
     parser.add_argument('--output', type=str, default='./output', help='output folder')  # output folder
-    parser.add_argument('--img-size', type=int, default=1024, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.2, help='object confidence threshold')
-    parser.add_argument('--iou-thres', type=float, default=0.1, help='IOU threshold for NMS')
+    parser.add_argument('--img-size', type=int, default=512, help='inference size (pixels)')
+    parser.add_argument('--conf-thres', type=float, default=0.3, help='object confidence threshold')
+    parser.add_argument('--iou-thres', type=float, default=0.6, help='IOU threshold for NMS')
     parser.add_argument('--fourcc', type=str, default='mp4v', help='output video codec (verify ffmpeg support)')
     parser.add_argument('--half', action='store_true', help='half precision FP16 inference')
     parser.add_argument('--device', default='', help='device id (i.e. 0 or 0,1) or cpu')
