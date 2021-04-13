@@ -999,8 +999,8 @@ def sliding_window(image, windowSize):
         bnds_idx += 1
         bnds.append(bnds_idx - 1)
 
-    stepSizex = int((1. - 0.01) * windowSize[1])
-    stepSizey = int((1. - 0.01) * windowSize[0])
+    stepSizex = int((1. - 0.1) * windowSize[0])
+    stepSizey = int((1. - 0.1) * windowSize[1])
 
     # dy = int((1. - 0.2) * windowSize)
     # slide a window across the image

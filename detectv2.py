@@ -16,7 +16,7 @@ def non_max_suppression_fast(boxes, iou_threshold, ratio):
     if ratio:
         width = boxes[:, 2] - boxes[:, 0]  # width
         height = boxes[:, 3] - boxes[:, 1]  # height
-        ratio = (width/height > 0.4) & (width/height < 1.56)
+        ratio = (width/height > 0.5) & (width/height < 1.5)
         boxes = boxes[ratio]
 
     # grab the coordinates of the bounding boxes
@@ -61,7 +61,7 @@ def load_geographic_data(x, names):
         left = cent_x - (width / 2)
         top = cent_y - (height / 2)
         try:
-            rad = ((width / 2) + (height ** 2 / (8 * width))) * 0.8
+            rad = (width / 2) + (height ** 2 / (8 * width)) / 2
         except ZeroDivisionError:
             rad = 0
 
@@ -82,7 +82,7 @@ def load_geographic_data(x, names):
 
         # create center-point of boxes
         pts = Point((cent_x, cent_y))
-        xy_points.append([names[int(idxs[5])], idxs[4], pts])
+        xy_points.append([names[int(idxs[5])], idxs[4], cent_x, cent_y, pts])
 
         bulat = Polygon(ext)
         circles.append([names[int(idxs[5])], idxs[4], rad, bulat])
@@ -211,7 +211,7 @@ def detect(save_img=False):
     xyxy = xywhcc2xyxycc(preds_list)
 
     # Apply 2nd non maximum suppresion algorithm
-    nms = non_max_suppression_fast(xyxy, 0.5, opt.ratio)
+    nms = non_max_suppression_fast(xyxy, 0.6, opt.ratio)
 
     print("Total object detected : ", len(nms))
 
@@ -248,7 +248,7 @@ def detect(save_img=False):
         with rio.open(os.path.join(out, filename), 'w', **source_meta[2]) as dst:
             dst.write(image, [1, 2, 3])
 
-    df = gpd.GeoDataFrame(geoms[0], columns=['class', 'confidence', 'geometry'])
+    df = gpd.GeoDataFrame(geoms[0], columns=['class', 'confidence', 'x_easting', 'y_northing','geometry'])
     df.crs = source_meta[0]
     df.to_file(os.path.join(out, 'detection_results.gpkg'), layer='points', driver='GPKG')
 

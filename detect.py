@@ -328,7 +328,7 @@ def detect(save_img=False):
                         # xy_coords.append([names[int(cls)], float(conf), xs, ys, Point((xs, ys))])
 
                         theta = np.linspace(0, 2 * 3.14, 30)
-                        x_, y_ = affine * (rad * np.cos(theta) + cent_x, rad * np.sin(theta) + cent_y)
+                        x_, y_ = affine * (rad/1.5 * np.cos(theta) + cent_x, rad/1.5 * np.sin(theta) + cent_y)
                         radius = math.sqrt((x_[0] - xs) ** 2 + (y_[0] - ys) ** 2)
 
                         # ext = list()
