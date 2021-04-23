@@ -6,6 +6,7 @@ from utils.utils import *
 from shapely.geometry import Point, Polygon
 import cv2
 import geopandas as gpd
+from tqdm import tqdm
 
 
 def non_max_suppression_fast(boxes, iou_threshold, ratio):
@@ -211,13 +212,13 @@ def detect(save_img=False):
     xyxy = xywhcc2xyxycc(preds_list)
 
     # Apply 2nd non maximum suppresion algorithm
-    nms = non_max_suppression_fast(xyxy, 0.6, opt.ratio)
+    nms = non_max_suppression_fast(xyxy, 0.5, opt.ratio)
 
     print("Total object detected : ", len(nms))
 
     geoms = load_geographic_data(nms, names)
 
-    for idxs in nms:
+    for idxs in tqdm(nms, desc='Process geoms', leaves=True):
         (cent_x, cent_y) = (idxs[0], idxs[1])
         # (width, height) = (idxs[2], idxs[3])
 
@@ -240,6 +241,8 @@ def detect(save_img=False):
         # print(int(left), int(top), int(right), int(bottom))
         # cv2.rectangle(image, (left, top), (right, bottom), (155, 255, 0), 2)
         cv2.circle(image, (int(cent_x), int(cent_y)), int(rad), colors[int(idxs[5])], 2)
+
+        
 
     if opt.save_img:
         image = image[:, :, ::-1].transpose(2, 0, 1)
