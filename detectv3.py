@@ -1,5 +1,8 @@
 import argparse
 from sys import platform
+
+import torch
+import math
 from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
@@ -39,42 +42,47 @@ def non_max_suppression_fast(boxes, iou_threshold):
     return new_boxes
 
 
-def load_geographic_data(x):
-    # input will be xyxy, generated from non_max_suppression_fast()
-    xy_points = list()
-    squares = list()
-    circles = list()
-    for idxs in x:
-        (cent_x, cent_y) = (idxs[0], idxs[1])
-        (width, height) = (idxs[2], idxs[3])
-        left = cent_x - (width / 2)
-        top = cent_y - (height / 2)
-        try:
-            rad = (width / 2) + (height ** 2 / (8 * width))
-        except ZeroDivisionError:
-            rad = 0
-
-        # collect bounding box rectangle's value to generate rectangular polygon
-        (x0, y0) = (left, top)
-        (x1, y1) = (left + width, top)
-        (x2, y2) = (left + width, top + height)
-        (x3, y3) = (left, top + height)
-        square = Polygon(((x0, y0), (x1, y1), (x2, y2), (x3, y3)))
-
-        theta = np.linspace(0, 2 * np.pi, 8)
-        x, y = rad * np.cos(theta) + cent_x, rad * np.sin(theta) + cent_y
-        # build the list of points of circular geometry
-        ext = list()
-        for i_theta in range(len(theta)):
-            ext.append((x[i_theta], y[i_theta]))
-        # create center-point of boxes
-        pts = Point((cent_x, cent_y))
-        xy_points.append([pts])
-        bulat = Polygon(ext)
-        circles.append([bulat])
-        squares.append([square])
-
-    return xy_points, circles, squares
+# def load_geographic_data(x, names):
+#     # input will be xywhcc, generated from non_max_suppression_fast()
+#     xy_points = list()
+#     squares = list()
+#     circles = list()
+#     confidences = list()
+#     class_name = list()
+#
+#     for idxs in x:
+#         (cent_x, cent_y) = (idxs[0], idxs[1])
+#         (width, height) = (idxs[2], idxs[3])
+#         left = cent_x - (width / 2)
+#         top = cent_y - (height / 2)
+#         try:
+#             rad = (width / 2) + (height ** 2 / (8 * width)) / 2
+#         except ZeroDivisionError:
+#             rad = 0
+#
+#         # collect bounding box rectangle's value to generate rectangular polygon
+#         (x0, y0) = (left, top)
+#         (x1, y1) = (left + width, top)
+#         (x2, y2) = (left + width, top + height)
+#         (x3, y3) = (left, top + height)
+#         square = Polygon(((x0, y0), (x1, y1), (x2, y2), (x3, y3)))
+#         squares.append([names[int(idxs[5])], idxs[4], square])
+#
+#         theta = torch.linspace(0, 2 * math.pi, 16)
+#         x, y = rad * torch.cos(theta) + cent_x, rad * torch.sin(theta) + cent_y
+#         # build the list of points of circular geometry
+#         ext = list()
+#         for i_theta in range(len(theta)):
+#             ext.append((x[i_theta], y[i_theta]))
+#
+#         # create center-point of boxes
+#         pts = Point((cent_x, cent_y))
+#         xy_points.append([names[int(idxs[5])], idxs[4], cent_x, cent_y, pts])
+#
+#         bulat = Polygon(ext)
+#         circles.append([names[int(idxs[5])], idxs[4], rad, bulat])
+#
+#     return xy_points, circles, squares
 
 
 def detect(save_img=False):
@@ -122,10 +130,7 @@ def detect(save_img=False):
     _ = model(image0.half() if half else image0.float()) if device.type != 'cpu' else None  # run once
 
     preds_list = list()
-    preds_list0 = list()
-    preds_conf = list()
-    points_geom = list()
-    detections = list()
+    preds = list()
     temp_dir = None
 
     for file0 in sliding_window(source, windowSize=(imgsz, imgsz)):
@@ -155,92 +160,61 @@ def detect(save_img=False):
         if half:
             pred = pred.float()
 
-        # print('pred:', pred.shape)
-        # print(pred)
-        # preds_list0.append(pred)
-        pred_xywh = pred
+        preds_list.append(pred)
 
-        pred0 = non_max_suppression(pred, opt.conf_thres, opt.iou_thres,
-                                   multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
-        # print('pred after nms0:\n', pred0, '\n')
-        # boxes = [None] * len(pred)
-        # for i, pred in enumerate(pred):
-        #     xyxy = xywh2xyxy(pred[:, :4])
-        #     y0 = torch.zeros_like(xyxy) if isinstance(xyxy, torch.Tensor) else np.zeros_like(xyxy)
-        #     (y0[:, 0], y0[:, 1]) = affine_coord * (xyxy[:, 0], xyxy[:, 1])
-        #     (y0[:, 2], y0[:, 3]) = affine_coord * (xyxy[:, 2], xyxy[:, 3])
-        #     y1 = torch.zeros_like(pred) if isinstance(pred, torch.Tensor) else np.zeros_like(pred)
-        #     (y1[:, 0], y1[:, 1]) = affine_coord * (pred[:, 0], pred[:, 1])
-        #     y1[:, 2] = y0[:, 2] - y0[:, 0]
-        #     y1[:, 3] = y0[:, 1] - y0[:, 3]
-        #     y1[:, 4] = pred[:, 4]
-        #     y1[:, 5] = pred[:, 5]
-        #     boxes[i] = y1
-        #     y1 = torch.cat((y1[:, :4], pred[:, 4].unsqueeze(1), pred[:, 5].float().unsqueeze(1)), 1)
+    appended_list = torch.cat(preds_list, dim=1)
+    pred = non_max_suppression(appended_list, opt.conf_thres, opt.iou_thres,
+                               multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
 
-        xyxy = xywh2xyxy(pred_xywh[:, :4])
-        # y0 = torch.zeros_like(xyxy) if isinstance(xyxy, torch.Tensor) else np.zeros_like(xyxy)
-        # (y0[:, 0], y0[:, 1]) = affine_coord * (xyxy[:, 0], xyxy[:, 1])
-        # (y0[:, 2], y0[:, 3]) = affine_coord * (xyxy[:, 2], xyxy[:, 3])
-        (xyxy[:, 0], xyxy[:, 1]) = affine_coord * (xyxy[:, 0], xyxy[:, 1])
-        (xyxy[:, 2], xyxy[:, 3]) = affine_coord * (xyxy[:, 2], xyxy[:, 3])
+    xy_points = list()
+    squares = list()
+    circles = list()
 
-        # y1 = torch.zeros_like(pred) if isinstance(pred, torch.Tensor) else np.zeros_like(pred)
-        # (y1[:, 0], y1[:, 1]) = affine_coord * (pred[:, 0], pred[:, 1])
-        # y1[:, 2] = y0[:, 2] - y0[:, 0]
-        # y1[:, 3] = y0[:, 1] - y0[:, 3]
-        # y1[:, 4] = pred[:, 4]
-        # y1[:, 5] = pred[:, 5]
-        (pred_xywh[:, 0], pred_xywh[:, 1]) = affine_coord * (pred_xywh[:, 0], pred_xywh[:, 1])
-        pred_xywh[:, 2] = xyxy[:, 2] - xyxy[:, 0]
-        pred_xywh[:, 3] = xyxy[:, 1] - xyxy[:, 3]
-        pred_xywh[:, 4] = pred[:, 4]
-        pred_xywh[:, 5] = pred[:, 5]
-        # print('another pred', pred_xywh.shape)
-        # print(pred_xywh)
-        # y1 = torch.cat((pred_xywh[:, :4], pred[:, 4].unsqueeze(1), pred[:, 5].float().unsqueeze(1)), 1)
-        print("-------------------------------------------------------------------------------")
-        pred1 = non_max_suppression(pred_xywh, opt.conf_thres, opt.iou_thres,
-                                    multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
-        for i, det in enumerate(pred1):
-            if det is not None and len(det):
-                for *xyxy, conf, cls in det:
-                    (c1, c2) = ((xyxy[0], xyxy[1]), (xyxy[2], xyxy[3]))
-                    (left, top) = (c1[0], c1[1])
-                    (width, height) = (c2[0] - left, c2[1] - top)
+    for i, det in enumerate(pred):
+        if det is not None and len(det):
+            for *xyxy, conf, cls in det:
+                """
+                x1y1                  x1y1    
+                +------+              +------+
+                |      |     >>>>     | cxcy |
+                +------+              +------+
+                        x2y2                  
+                """
+                (left, top) = (xyxy[0], xyxy[1])
+                (right, bottom) = (xyxy[2], xyxy[3])
+                cx = (xyxy[0] + xyxy[2]) / 2  # x center
+                cy = (xyxy[1] + xyxy[3]) / 2  # y center
+                width = xyxy[2] - xyxy[0]  # width
+                height = xyxy[3] - xyxy[1]  # height
 
-                    cx = left + width / 2
-                    cy = top + height / 2
-                    (geom_cx, geom_cy) = affine_coord * (cx, cy)
-                    points = Point((geom_cx, geom_cy))
-                    print(points)
-                    points_geom.append([points])
+                # (x1_geom, y1_geom) = affine_coord * (left, top)
+                # (x2_geom, y2_geom) = affine_coord * (right, bottom)
+                (cx_geom, cy_geom) = affine_coord * (cx, cy)
 
-    # preds_list0 = torch.cat(preds_list0, 1)
-    # print(preds_list0)
-    # print('----\n')
-    # preds_list = torch.cat(preds_list, 1)
-    # print(preds_list)
-    # predictions = non_max_suppression(preds_list0, opt.conf_thres, opt.iou_thres,
-    #                                   multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
-    # print('****\n')
-    # print(predictions)
+                xywh = xywh2geom(left, top, width, height, affine_coord, device)
 
-    # for i, det in enumerate(predictions):
-    #     if det is not None and len(det):
-    #         for *xyxy, conf, cls in det:
-    #             (c1, c2) = ((xyxy[0], xyxy[1]), (xyxy[2], xyxy[3]))
-    #             (left, top) = (c1[0], c1[1])
-    #             (width, height) = (c2[0] - left, c2[1] - top)
+                # create center-point of boxes
+                pts = Point((cx_geom, cy_geom))
+                xy_points.append([names[int(cls)], float(conf), cx_geom, cy_geom, pts])
+
+                # preds_list.append([cx_geom, cy_geom, xywh[2], xywh[3], conf, cls])
+
+    print(xy_points)
+
+    # geoms = load_geographic_data(preds, names)
     #
-    #             cx = left + width / 2
-    #             cy = top + height / 2
-    #             points = Point((cx, cy))
-    #             points_geom.append([points])
+    # df = gpd.GeoDataFrame(geoms[0], columns=['class', 'confidence', 'x_easting', 'y_northing','geometry'])
+    # df.crs = source_meta[0]
+    # df.to_file(os.path.join(out, 'detection_results.gpkg'), layer='points', driver='GPKG')
     #
-    df = gpd.GeoDataFrame(points_geom, columns=['geometry'])
-    df.crs = source_meta[0]
-    df.to_file(os.path.join(out, 'detection_results.gpkg'), layer='points', driver='GPKG')
+    # df_bulat = gpd.GeoDataFrame(geoms[1], columns=['class', 'confidence', 'radius', 'geometry'])
+    # df_bulat.crs = source_meta[0]
+    # df_bulat.to_file(os.path.join(out, 'detection_results.gpkg'), layer='canopy', driver='GPKG')
+    #
+    # df_sq = gpd.GeoDataFrame(geoms[2], columns=['class', 'confidence', 'geometry'])
+    # df_sq.crs = source_meta[0]
+    # df_sq.to_file(os.path.join(out, 'detection_results.gpkg'), layer='square', driver='GPKG')
+
 
     shutil.rmtree(temp_dir)
     print('Done. (%.3fs)' % (time.time() - t0))

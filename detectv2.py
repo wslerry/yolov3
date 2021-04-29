@@ -151,6 +151,9 @@ def detect(save_img=False):
         # read each image in temporary folder using opencv
         image0 = cv2.imread(image0)  # BGR
         (_H0, _W0) = image0.shape[:2]
+        # image0 = cv2.UMat(image0)
+        # image0 = cv2.resize(image0, (imgsz, imgsz))
+        # (_H0, _W0) = image0.shape[:2]
         image0 = letterbox(image0, new_shape=imgsz)[0]
         image0 = image0[:, :, ::-1].transpose(2, 0, 1)
         image0 = np.ascontiguousarray(image0)
@@ -212,13 +215,13 @@ def detect(save_img=False):
     xyxy = xywhcc2xyxycc(preds_list)
 
     # Apply 2nd non maximum suppresion algorithm
-    nms = non_max_suppression_fast(xyxy, 0.5, opt.ratio)
+    nms = non_max_suppression_fast(xyxy, 0.6, opt.ratio)
 
     print("Total object detected : ", len(nms))
 
     geoms = load_geographic_data(nms, names)
 
-    for idxs in tqdm(nms, desc='Process geoms', leaves=True):
+    for idxs in tqdm(nms, desc='Process geoms', leave=True):
         (cent_x, cent_y) = (idxs[0], idxs[1])
         # (width, height) = (idxs[2], idxs[3])
 
@@ -241,8 +244,6 @@ def detect(save_img=False):
         # print(int(left), int(top), int(right), int(bottom))
         # cv2.rectangle(image, (left, top), (right, bottom), (155, 255, 0), 2)
         cv2.circle(image, (int(cent_x), int(cent_y)), int(rad), colors[int(idxs[5])], 2)
-
-        
 
     if opt.save_img:
         image = image[:, :, ::-1].transpose(2, 0, 1)
