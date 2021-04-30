@@ -38,51 +38,52 @@ def non_max_suppression_fast(boxes, iou_threshold):
         # delete all indexes from the index list that have
         idxs = np.delete(idxs, np.concatenate(([last],
                                                np.where(overlap > iou_threshold)[0])))
-    new_boxes = xyxy2xywh(boxes[pick])
+    # new_boxes = xyxycc2xywhcc(boxes[pick])
+    new_boxes = boxes[pick]
     return new_boxes
 
 
-# def load_geographic_data(x, names):
-#     # input will be xywhcc, generated from non_max_suppression_fast()
-#     xy_points = list()
-#     squares = list()
-#     circles = list()
-#     confidences = list()
-#     class_name = list()
-#
-#     for idxs in x:
-#         (cent_x, cent_y) = (idxs[0], idxs[1])
-#         (width, height) = (idxs[2], idxs[3])
-#         left = cent_x - (width / 2)
-#         top = cent_y - (height / 2)
-#         try:
-#             rad = (width / 2) + (height ** 2 / (8 * width)) / 2
-#         except ZeroDivisionError:
-#             rad = 0
-#
-#         # collect bounding box rectangle's value to generate rectangular polygon
-#         (x0, y0) = (left, top)
-#         (x1, y1) = (left + width, top)
-#         (x2, y2) = (left + width, top + height)
-#         (x3, y3) = (left, top + height)
-#         square = Polygon(((x0, y0), (x1, y1), (x2, y2), (x3, y3)))
-#         squares.append([names[int(idxs[5])], idxs[4], square])
-#
-#         theta = torch.linspace(0, 2 * math.pi, 16)
-#         x, y = rad * torch.cos(theta) + cent_x, rad * torch.sin(theta) + cent_y
-#         # build the list of points of circular geometry
-#         ext = list()
-#         for i_theta in range(len(theta)):
-#             ext.append((x[i_theta], y[i_theta]))
-#
-#         # create center-point of boxes
-#         pts = Point((cent_x, cent_y))
-#         xy_points.append([names[int(idxs[5])], idxs[4], cent_x, cent_y, pts])
-#
-#         bulat = Polygon(ext)
-#         circles.append([names[int(idxs[5])], idxs[4], rad, bulat])
-#
-#     return xy_points, circles, squares
+def load_geographic_data(x, names):
+    # input will be xywhcc, generated from non_max_suppression_fast()
+    xy_points = list()
+    squares = list()
+    circles = list()
+    confidences = list()
+    class_name = list()
+
+    for idxs in x:
+        (cent_x, cent_y) = (idxs[0], idxs[1])
+        (width, height) = (idxs[2], idxs[3])
+        left = cent_x - (width / 2)
+        top = cent_y - (height / 2)
+        try:
+            rad = (width / 2) + (height ** 2 / (8 * width)) / 2
+        except ZeroDivisionError:
+            rad = 0
+
+        # collect bounding box rectangle's value to generate rectangular polygon
+        (x0, y0) = (left, top)
+        (x1, y1) = (left + width, top)
+        (x2, y2) = (left + width, top + height)
+        (x3, y3) = (left, top + height)
+        square = Polygon(((x0, y0), (x1, y1), (x2, y2), (x3, y3)))
+        squares.append([names[int(idxs[5])], idxs[4], square])
+
+        theta = torch.linspace(0, 2 * math.pi, 16)
+        x, y = rad * torch.cos(theta) + cent_x, rad * torch.sin(theta) + cent_y
+        # build the list of points of circular geometry
+        ext = list()
+        for i_theta in range(len(theta)):
+            ext.append((x[i_theta], y[i_theta]))
+
+        # create center-point of boxes
+        pts = Point((cent_x, cent_y))
+        xy_points.append([names[int(idxs[5])], idxs[4], cent_x, cent_y, pts])
+
+        bulat = Polygon(ext)
+        circles.append([names[int(idxs[5])], idxs[4], rad, bulat])
+
+    return xy_points, circles, squares
 
 
 def detect(save_img=False):
@@ -108,7 +109,7 @@ def detect(save_img=False):
         load_darknet_weights(model, weights)
 
     # read main image
-    source_meta = geo_params(source)
+    image_crs0, affine_coord0, src_meta0 = geo_params(source)
 
     # image = cv2.imread(source)
 
@@ -132,6 +133,8 @@ def detect(save_img=False):
     preds_list = list()
     preds = list()
     temp_dir = None
+    image_crs, affine_coord, src_meta = None, None, None
+    output_preds = [None]
 
     for file0 in sliding_window(source, windowSize=(imgsz, imgsz)):
         (temp_dir, image0) = file0
@@ -160,59 +163,97 @@ def detect(save_img=False):
         if half:
             pred = pred.float()
 
-        preds_list.append(pred)
+        # transform xywh to geographic values
+        for i, j in enumerate(pred):
+            (j[:, 0], j[:, 1]) = affine_coord * (j[:, 0], j[:, 1])
+            j[:, 2] = affine_coord[0] * j[:, 2]
+            j[:, 3] = affine_coord[0] * j[:, 3]
+            pred = j.unsqueeze(0)
 
-    appended_list = torch.cat(preds_list, dim=1)
-    pred = non_max_suppression(appended_list, opt.conf_thres, opt.iou_thres,
-                               multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
+        # print(pred.shape)
+        # print(pred)
 
+        pred = non_max_suppression(pred, method='merge',
+                                   conf_thres=opt.conf_thres, iou_thres=opt.iou_thres,
+                                   multi_label=False, classes=opt.classes,
+                                   agnostic=opt.agnostic_nms)
+
+        for i, det in enumerate(pred):
+            if det is not None and len(det):
+                for *xyxy, conf, cls in det:
+                    (x1, y1) = (xyxy[0], xyxy[1])
+                    (x2, y2) = (xyxy[2], xyxy[3])
+                    cx = (xyxy[0] + xyxy[2]) / 2  # x center
+                    cy = (xyxy[1] + xyxy[3]) / 2  # y center
+                    width = xyxy[2] - xyxy[0]  # width
+                    height = xyxy[3] - xyxy[1]  # height
+
+                    # preds_list.append([cx, cy, x1, y1, x2, y2, width, height, conf, cls])
+                    # preds_list.append([float(cx), float(cy), float(width), float(height), float(conf), float(cls)])
+                    preds_list.append([x1, y1, x2, y2, float(conf), float(cls)])
+
+    torch.cuda.empty_cache()
+    preds_list = (torch.FloatTensor(preds_list)).cpu().data.numpy()
+    print(preds_list, '\n')
+
+    ##
+    # pred_tensor = torch.unsqueeze(torch.Tensor(preds_list), 0)
+    # print(pred_tensor, '\n')
+
+    # Apply 2nd non maximum suppresion algorithm
+    nms = non_max_suppression_fast(preds_list, 0.5)
+
+    print(nms)
+
+
+    # pred2 = non_max_suppression(pred_tensor, method='merge',
+    #                             conf_thres=0.0, iou_thres=0.4,
+    #                             multi_label=False, classes=opt.classes,
+    #                             agnostic=None)
+    # print(pred2)
+    #
     xy_points = list()
-    squares = list()
-    circles = list()
+    for i, det in enumerate(nms):
+        (x1, y1) = (det[0], det[1])
+        (x2, y2) = (det[2], det[3])
+        cx = (det[0] + det[2]) / 2  # x center
+        cy = (det[1] + det[3]) / 2  # y center
+        width = det[2] - det[0]  # width
+        height = det[3] - det[1]  # height
+        pts = Point((cx, cy))
+        xy_points.append([names[int(cls)], float(conf), float(cx), float(cy), pts])
+        # if det is not None and len(det):
+        #     for *xyxy, conf, cls in det:
+        #         """
+        #         x1y1                  x1y1
+        #         +------+              +------+
+        #         |      |     >>>>     | cxcy |
+        #         +------+              +------+
+        #                 x2y2
+        #         """
+        #         (x1, y1) = (xyxy[0], xyxy[1])
+        #         (x2, y2) = (xyxy[2], xyxy[3])
+        #         cx = (xyxy[0] + xyxy[2]) / 2  # x center
+        #         cy = (xyxy[1] + xyxy[3]) / 2  # y center
+        #         width = xyxy[2] - xyxy[0]  # width
+        #         height = xyxy[3] - xyxy[1]  # height
+        #
+        #         # create center-point of boxes
+        #         pts = Point((cx, cy))
+        #         xy_points.append([names[int(cls)], float(conf), float(cx), float(cy), pts])
 
-    for i, det in enumerate(pred):
-        if det is not None and len(det):
-            for *xyxy, conf, cls in det:
-                """
-                x1y1                  x1y1    
-                +------+              +------+
-                |      |     >>>>     | cxcy |
-                +------+              +------+
-                        x2y2                  
-                """
-                (left, top) = (xyxy[0], xyxy[1])
-                (right, bottom) = (xyxy[2], xyxy[3])
-                cx = (xyxy[0] + xyxy[2]) / 2  # x center
-                cy = (xyxy[1] + xyxy[3]) / 2  # y center
-                width = xyxy[2] - xyxy[0]  # width
-                height = xyxy[3] - xyxy[1]  # height
+    # # geoms = load_geographic_data(pred, names)
 
-                # (x1_geom, y1_geom) = affine_coord * (left, top)
-                # (x2_geom, y2_geom) = affine_coord * (right, bottom)
-                (cx_geom, cy_geom) = affine_coord * (cx, cy)
+    df = gpd.GeoDataFrame(xy_points, columns=['class', 'confidence', 'x_easting', 'y_northing','geometry'])
+    df.crs = image_crs0
+    df.to_file(os.path.join(out, 'detection_results.gpkg'), layer='points', driver='GPKG')
 
-                xywh = xywh2geom(left, top, width, height, affine_coord, device)
-
-                # create center-point of boxes
-                pts = Point((cx_geom, cy_geom))
-                xy_points.append([names[int(cls)], float(conf), cx_geom, cy_geom, pts])
-
-                # preds_list.append([cx_geom, cy_geom, xywh[2], xywh[3], conf, cls])
-
-    print(xy_points)
-
-    # geoms = load_geographic_data(preds, names)
-    #
-    # df = gpd.GeoDataFrame(geoms[0], columns=['class', 'confidence', 'x_easting', 'y_northing','geometry'])
-    # df.crs = source_meta[0]
-    # df.to_file(os.path.join(out, 'detection_results.gpkg'), layer='points', driver='GPKG')
-    #
     # df_bulat = gpd.GeoDataFrame(geoms[1], columns=['class', 'confidence', 'radius', 'geometry'])
-    # df_bulat.crs = source_meta[0]
+    # df_bulat.crs = image_crs0
     # df_bulat.to_file(os.path.join(out, 'detection_results.gpkg'), layer='canopy', driver='GPKG')
-    #
+
     # df_sq = gpd.GeoDataFrame(geoms[2], columns=['class', 'confidence', 'geometry'])
-    # df_sq.crs = source_meta[0]
+    # df_sq.crs = image_crs0
     # df_sq.to_file(os.path.join(out, 'detection_results.gpkg'), layer='square', driver='GPKG')
 
 

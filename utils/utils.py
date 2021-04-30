@@ -133,6 +133,8 @@ def xywh2xyxy(x):
     y[:, 1] = x[:, 1] - x[:, 3] / 2  # top left y
     y[:, 2] = x[:, 0] + x[:, 2] / 2  # bottom right x
     y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
+    # y[:, 4] = x[:, 4]  # confidence
+    # y[:, 5] = x[:, 5]  # class
     return y
 
 
@@ -550,30 +552,33 @@ def build_targets(p, targets, model):
     return tcls, tbox, indices, av
 
 
-def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=True, classes=None, agnostic=False):
+def non_max_suppression(prediction, method='merge', conf_thres=0.1, iou_thres=0.6, multi_label=True, classes=None, agnostic=False):
     """
     Performs  Non-Maximum Suppression on inference results
     Returns detections with shape:
         nx6 (x1, y1, x2, y2, conf, cls)
     """
     # Box constraints
-    min_wh, max_wh = 10, 32  #2, 4096  # (pixels) minimum and maximum box width and height
+    min_wh, max_wh = 2, 4096  # (pixels) minimum and maximum box width and height
+    # min_wh, max_wh = 10, 32
 
-    method = 'merge'
+    method = method
     nc = prediction[0].shape[1] - 5  # number of classes
     multi_label &= nc > 1  # multiple labels per box
     output = [None] * len(prediction)
 
     for xi, x in enumerate(prediction):  # image index, image inference
+        # convert xywh to geodetic value
+
         # Apply conf constraint
         x = x[x[:, 4] > conf_thres]
 
         # Apply width-height constraint
         x = x[((x[:, 2:4] > min_wh) & (x[:, 2:4] < max_wh)).all(1)]
-        width = x[:, 2]
-        height = x[:, 3]
-        ratio = (width/height > 0.95) & (width/height < 1.05)
-        x = x[ratio]
+        # width = x[:, 2]
+        # height = x[:, 3]
+        # ratio = (width/height > 0.65) & (width/height < 1.35)
+        # x = x[ratio]
 
         # If none remain process next image
         if not x.shape[0]:
